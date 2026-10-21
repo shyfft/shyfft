@@ -5,6 +5,7 @@ import "@lovable.dev/cloud-auth-js/styles.css";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable/index";
 import { LogoMark } from "@/components/shyfft/Logo";
+import { MadeWithLove } from "@/components/shyfft/MadeWithLove";
 import { useStore } from "@/lib/store";
 
 export const Route = createFileRoute("/auth")({
