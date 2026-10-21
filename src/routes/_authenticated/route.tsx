@@ -2,6 +2,7 @@ import { createFileRoute, Outlet, redirect, useLocation, useNavigate } from "@ta
 import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { LogoMark } from "@/components/shyfft/Logo";
+import { MadeWithLove } from "@/components/shyfft/MadeWithLove";
 import { useStore } from "@/lib/store";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -22,8 +23,9 @@ function Gate() {
   }, [s.ready, s.me, pathname, nav]);
   if (!s.ready) {
     return (
-      <div className="flex h-dvh items-center justify-center">
+      <div className="relative flex h-dvh flex-col items-center justify-center gap-8">
         <div className="animate-pulse"><LogoMark size={56} /></div>
+        <MadeWithLove className="absolute bottom-8" />
       </div>
     );
   }

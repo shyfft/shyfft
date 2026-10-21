@@ -3,6 +3,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { LogoMark } from "@/components/shyfft/Logo";
+import { MadeWithLove } from "@/components/shyfft/MadeWithLove";
 
 export const Route = createFileRoute("/reset-password")({
   head: () => ({
@@ -36,6 +37,7 @@ function ResetPassword() {
       <input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="New password"
         className="w-full rounded-xl border bg-card px-4 py-3 text-sm outline-none" autoComplete="new-password" />
       <button disabled={busy} className="rounded-xl bg-brand py-3 font-semibold text-primary-foreground disabled:opacity-60">Save password</button>
+      <MadeWithLove className="pt-6" />
     </form>
   );
 }
