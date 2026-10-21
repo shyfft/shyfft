@@ -6,6 +6,7 @@ import { UserAvatar } from "@/components/shyfft/Avatar";
 import { timeAgo } from "@/lib/format";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { VerifiedBadge } from "@/components/shyfft/VerifiedBadge";
 
 export const Route = createFileRoute("/_authenticated/notifications")({
   head: () => ({
@@ -41,7 +42,7 @@ function Notifications() {
             <li key={n.id} className={cn("flex items-center gap-3 px-4 py-3", !n.read && "bg-accent/50")}>
               <Link to="/u/$username" params={{ username: u.username }}><UserAvatar user={u} size={44} /></Link>
               <p className="flex-1 text-sm">
-                <span className="font-semibold">{u.username}</span> {LABEL[n.type]} {n.text} <span className="text-muted-foreground">{timeAgo(n.createdAt)}</span>
+                <span className="font-semibold">{u.username}</span><VerifiedBadge show={u.verified} className="ml-0.5 size-3.5" /> {LABEL[n.type]} {n.text} <span className="text-muted-foreground">{timeAgo(n.createdAt)}</span>
               </p>
               {n.type === "follow" ? (
                 <button onClick={() => s.toggleFollow(u.id)}

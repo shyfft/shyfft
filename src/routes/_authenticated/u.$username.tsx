@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { BadgeCheck, Bookmark, Film, Grid3x3, Lock, Menu, MoreHorizontal } from "lucide-react";
+import { Bookmark, Film, Grid3x3, Lock, Menu, MoreHorizontal } from "lucide-react";
 import { useState } from "react";
 import { TopBar } from "@/components/shyfft/AppShell";
 import { UserAvatar } from "@/components/shyfft/Avatar";
@@ -7,6 +7,7 @@ import { PostMenu } from "@/components/shyfft/PostMenu";
 import { compact } from "@/lib/format";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { VerifiedBadge } from "@/components/shyfft/VerifiedBadge";
 
 export const Route = createFileRoute("/_authenticated/u/$username")({
   head: ({ params }) => ({
@@ -39,7 +40,7 @@ function Profile() {
 
   return (
     <>
-      <TopBar title={<span className="flex items-center gap-1">{user.username}{user.verified && <BadgeCheck className="size-4 text-primary" />}</span>}
+      <TopBar title={<span className="flex items-center gap-1">{user.username}<VerifiedBadge show={user.verified} /></span>}
         right={isMe
           ? <Link to="/settings" aria-label="Settings"><Menu className="size-6" /></Link>
           : <button aria-label="More" onClick={() => setMenu(true)}><MoreHorizontal className="size-6" /></button>} />
@@ -52,7 +53,7 @@ function Profile() {
             <Stat n={all.length} l="posts" /><Stat n={user.followers} l="followers" /><Stat n={user.following} l="following" />
           </div>
         </div>
-        <p className="mt-3 text-sm font-semibold">{user.name}</p>
+        <p className="mt-3 flex items-center gap-1 text-sm font-semibold">{user.name}<VerifiedBadge show={user.verified} className="size-3.5" /></p>
         <p className="whitespace-pre-line text-sm">{user.bio}</p>
         <div className="mt-4 flex gap-2">
           {isMe ? (

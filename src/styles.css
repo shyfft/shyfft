@@ -19,6 +19,7 @@
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
+  --color-verified: var(--verified);
   --color-primary-foreground: var(--primary-foreground);
   --color-brand-green: var(--brand-green);
   --color-brand-blue: var(--brand-blue);
@@ -39,6 +40,7 @@
 }
 
 :root {
+  --verified: oklch(0.66 0.19 150);
   --radius: 0.875rem;
   --brand-green: oklch(0.78 0.19 152);
   --brand-blue: oklch(0.6 0.19 252);
@@ -70,6 +72,7 @@
 }
 
 .dark {
+  --verified: oklch(0.74 0.2 150);
   --background: oklch(0.14 0.015 240);
   --foreground: oklch(0.96 0.005 220);
   --card: oklch(0.18 0.018 240);
