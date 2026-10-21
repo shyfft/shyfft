@@ -86,8 +86,6 @@ function Profile() {
             <BadgeCheck className="size-4" />{user.verified ? "Remove verification (admin)" : "Grant verification (admin)"}
           </button>
         )}
-        <div className="hidden">
-        </div>
       </section>
       {blocked ? <p className="p-10 text-center text-sm text-muted-foreground">You blocked this account.</p>
         : locked ? (
