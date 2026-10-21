@@ -82,7 +82,7 @@ function Profile() {
         ) : (
           <>
             <div className="flex border-t">
-              {([["posts", Grid3x3], ["reels", Film], ...(isMe ? [["saved", Bookmark]] : [])] as const).map(([k, Icon]) => (
+              {([["posts", Grid3x3], ["reels", Film], ...(isMe ? [["saved", Bookmark] as const] : [])] as Array<readonly ["posts" | "reels" | "saved", typeof Film]>).map(([k, Icon]) => (
                 <button key={k} aria-label={k} onClick={() => setTab(k)}
                   className={cn("flex flex-1 justify-center border-t-2 py-3", tab === k ? "border-foreground" : "border-transparent text-muted-foreground")}>
                   <Icon className="size-5" />

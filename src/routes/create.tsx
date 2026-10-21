@@ -9,8 +9,8 @@ import { cn } from "@/lib/utils";
 type Tab = "post" | "reel" | "story";
 
 export const Route = createFileRoute("/create")({
-  validateSearch: (s: Record<string, unknown>): { tab?: Tab } =>
-    ({ tab: s.tab === "reel" || s.tab === "story" ? s.tab : undefined }),
+  validateSearch: (s: Record<string, unknown>): { tab?: Tab | undefined } =>
+    ({ tab: s["tab"] === "reel" || s["tab"] === "story" ? (s["tab"] as Tab) : undefined }),
   head: () => ({
     meta: [
       { title: "Create — shyfft" },
@@ -39,7 +39,7 @@ function Create() {
   };
 
   const share = () => {
-    if (!file) return toast.error("Pick a photo or video first");
+    if (!file) { toast.error("Pick a photo or video first"); return; }
     if (tab === "story") {
       s.createStory(file.url);
       toast.success("Story shared for 24 hours");

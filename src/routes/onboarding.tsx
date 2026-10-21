@@ -29,7 +29,7 @@ function Onboarding() {
   const err = validateUsername(username, taken);
 
   const save = () => {
-    if (err) return toast.error(err);
+    if (err) { toast.error(err); return; }
     s.updateMe({ username: username.toLowerCase(), name, bio });
     toast.success("Profile saved");
     nav({ to: "/u/$username", params: { username: username.toLowerCase() } });

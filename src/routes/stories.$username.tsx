@@ -32,7 +32,7 @@ function StoryViewer() {
 
   const next = () => {
     if (i < items.length - 1) return setI(i + 1);
-    const nextUser = s.getUser(order[order.indexOf(user!.id) + 1]);
+    const nid = order[order.indexOf(user!.id) + 1]; const nextUser = nid ? s.getUser(nid) : undefined;
     nextUser ? nav({ to: "/stories/$username", params: { username: nextUser.username } }) : nav({ to: "/" });
   };
   const prev = () => (i > 0 ? setI(i - 1) : undefined);
@@ -45,7 +45,7 @@ function StoryViewer() {
   if (!user || items.length === 0) {
     return <div className="flex h-dvh items-center justify-center bg-overlay text-overlay-foreground">Story expired</div>;
   }
-  const story = items[i];
+  const story = items[i] ?? items[0]!;
   return (
     <div className="relative h-dvh bg-overlay text-overlay-foreground">
       <img src={story.media} alt="" className="h-full w-full object-cover" />

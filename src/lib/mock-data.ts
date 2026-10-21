@@ -32,7 +32,7 @@ export const seedPosts: Post[] = [
   ] },
   { id: "p4", userId: "u4", media: p4, mediaType: "image", kind: "reel", caption: "Finally landed it 🛹", likes: 5210, createdAt: now - 20 * h, comments: [] },
   ...Array.from({ length: 8 }, (_, i): Post => ({
-    id: `x${i}`, userId: seedUsers[(i % 5) + 1].id, media: imgs[i % 4], mediaType: "image", kind: i % 3 === 0 ? "reel" : "post",
+    id: `x${i}`, userId: seedUsers[(i % 5) + 1]!.id, media: imgs[i % 4]!, mediaType: "image", kind: i % 3 === 0 ? "reel" : "post",
     caption: "Moments ✨", likes: 100 + i * 37, createdAt: now - (24 + i * 6) * h, comments: [],
   })),
 ];

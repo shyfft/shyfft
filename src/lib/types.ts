@@ -26,7 +26,7 @@ export type Post = {
   likes: number;
   comments: Comment[];
   createdAt: number;
-  location?: string;
+  location?: string | undefined;
 };
 
 export type Story = { id: string; userId: string; media: string; createdAt: number };

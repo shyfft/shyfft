@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import type { User } from "@/lib/types";
 
-export function UserAvatar({ user, size = 36, ring = false, className }: { user?: User; size?: number; ring?: boolean; className?: string }) {
+export function UserAvatar({ user, size = 36, ring = false, className }: { user?: User | undefined; size?: number; ring?: boolean; className?: string }) {
   const img = (
     <img src={user?.avatar} alt={user?.username ?? ""} width={size} height={size}
       className="rounded-full bg-muted object-cover" style={{ width: size, height: size }} />
