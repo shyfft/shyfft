@@ -51,7 +51,7 @@ function Explore() {
       ) : (
         <div className="grid grid-cols-3 gap-0.5">
           {posts.map((p, i) => (
-            <Link key={p.id} to={p.kind === "reel" ? "/reels" : "/p/$id"} params={{ id: p.id }}
+            <Link key={p.id} to="/p/$id" params={{ id: p.id }}
               className={`relative bg-muted ${i % 7 === 2 ? "row-span-2" : ""}`}>
               <img src={p.media} alt="" loading="lazy" className="h-full w-full object-cover aspect-square" />
               {p.kind === "reel" && <Film className="absolute right-2 top-2 size-4 text-overlay-foreground drop-shadow" />}

@@ -11,7 +11,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const { me } = useStore();
   const hide = HIDE_NAV.some((p) => pathname.startsWith(p));
-  const item = (to: string, active: boolean, icon: ReactNode, label: string) => (
+  const item = (to: "/" | "/explore" | "/reels", active: boolean, icon: ReactNode, label: string) => (
     <Link to={to} aria-label={label} className={cn("flex flex-1 items-center justify-center py-3 transition-transform active:scale-90", active ? "text-foreground" : "text-muted-foreground")}>
       {icon}
     </Link>

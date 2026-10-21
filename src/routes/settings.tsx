@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight, LogOut, Moon, Shield, UserX, User as UserIcon, Sun } from "lucide-react";
 import { toast } from "sonner";
@@ -58,7 +59,7 @@ function Settings() {
   );
 }
 
-function Group({ title, children }: { title: string; children: React.ReactNode }) {
+function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="mt-4">
       <h3 className="px-4 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h3>
