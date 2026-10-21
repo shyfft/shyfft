@@ -10,5 +10,8 @@
 <!-- LOVABLE:END -->
 
 ## Architecture
-- All app data flows through `src/lib/store.tsx` actions over types in `src/lib/types.ts`; swap action bodies for backend calls when Cloud is connected so pages don't change.
-- Reusable UI lives in `src/components/shyfft/`; pages in `src/routes/`.
+- All app data flows through `src/lib/store.tsx` (loads from the database, optimistic actions, realtime for messages/notifications) over UI types in `src/lib/types.ts`; pages never query the database directly so data access stays in one place.
+- Every app page lives under `src/routes/_authenticated/` (client-only sign-in gate + onboarding redirect); only `/auth` and `/reset-password` are public, because the whole app needs a signed-in user.
+- Media lives in a private `media` storage bucket under `<user_id>/...`; the DB stores paths and the store turns them into signed URLs, because the workspace blocks public buckets.
+- Like/comment/follower counts and notifications are maintained by DB triggers, and a trigger blocks users from editing counters/verified, so clients never write them.
+- Reusable UI lives in `src/components/shyfft/`.
