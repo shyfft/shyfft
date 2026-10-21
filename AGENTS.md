@@ -8,3 +8,7 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+## Architecture
+- All app data flows through `src/lib/store.tsx` actions over types in `src/lib/types.ts`; swap action bodies for backend calls when Cloud is connected so pages don't change.
+- Reusable UI lives in `src/components/shyfft/`; pages in `src/routes/`.
