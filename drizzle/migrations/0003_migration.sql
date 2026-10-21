@@ -1,0 +1,2 @@
+revoke execute on function public.handle_new_user(), public.on_like_change(), public.on_comment_change(), public.on_follow_change(), public.on_block() from public, anon, authenticated;
+revoke execute on function public.can_view_user(uuid) from public, anon;
