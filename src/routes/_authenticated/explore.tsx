@@ -2,10 +2,9 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Film, Search, X } from "lucide-react";
 import { useState } from "react";
 import { UserAvatar } from "@/components/shyfft/Avatar";
-import { ME_ID } from "@/lib/mock-data";
 import { useStore } from "@/lib/store";
 
-export const Route = createFileRoute("/explore")({
+export const Route = createFileRoute("/_authenticated/explore")({
   head: () => ({
     meta: [
       { title: "Explore — shyfft" },
@@ -19,6 +18,7 @@ export const Route = createFileRoute("/explore")({
 
 function Explore() {
   const { posts, users, blocked } = useStore();
+  const ME_ID = useStore().me.id;
   const [q, setQ] = useState("");
   const query = q.trim().toLowerCase();
   const results = users.filter((u) => u.id !== ME_ID && !blocked.has(u.id) &&

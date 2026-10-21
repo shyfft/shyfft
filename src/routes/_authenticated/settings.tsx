@@ -7,7 +7,7 @@ import { UserAvatar } from "@/components/shyfft/Avatar";
 import { Switch } from "@/components/ui/switch";
 import { useStore } from "@/lib/store";
 
-export const Route = createFileRoute("/settings")({
+export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({
     meta: [
       { title: "Settings — shyfft" },
@@ -40,7 +40,7 @@ function Settings() {
       <Group title="Privacy">
         <label className={row}>
           <Shield className="size-5" /><span className="flex-1">Private account<span className="block text-xs text-muted-foreground">Only approved followers see your posts</span></span>
-          <Switch checked={s.privateAccount} onCheckedChange={(v) => { s.setPrivateAccount(v); s.updateMe({ isPrivate: v }); }} />
+          <Switch checked={s.privateAccount} onCheckedChange={(v) => s.setPrivateAccount(v)} />
         </label>
       </Group>
       <Group title={`Blocked accounts (${blocked.length})`}>
@@ -53,7 +53,7 @@ function Settings() {
         ))}
       </Group>
       <Group title="Session">
-        <button onClick={() => toast("Sign-in will be enabled once accounts are connected")} className={`${row} w-full text-destructive`}><LogOut className="size-5" />Log out</button>
+        <button onClick={async () => { await s.signOut(); toast("Signed out"); router.navigate({ to: "/auth", replace: true }); }} className={`${row} w-full text-destructive`}><LogOut className="size-5" />Log out</button>
       </Group>
     </>
   );

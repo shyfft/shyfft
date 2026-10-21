@@ -1,11 +1,11 @@
 import { Link } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { ME_ID } from "@/lib/mock-data";
 import { UserAvatar } from "./Avatar";
 
 export function StoriesBar() {
   const { stories, getUser, me } = useStore();
+  const ME_ID = useStore().me.id;
   const ids = [...new Set(stories.map((s) => s.userId))].filter((id) => id !== ME_ID);
   const mine = stories.some((s) => s.userId === ME_ID);
   return (

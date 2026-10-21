@@ -1,11 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Bookmark, Heart, MessageCircle } from "lucide-react";
 import { UserAvatar } from "@/components/shyfft/Avatar";
-import { compact } from "@/lib/mock-data";
+import { compact } from "@/lib/format";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
-export const Route = createFileRoute("/reels")({
+export const Route = createFileRoute("/_authenticated/reels")({
   head: () => ({
     meta: [
       { title: "Reels — shyfft" },
@@ -36,7 +36,7 @@ function Reels() {
                   <UserAvatar user={u} size={32} />
                   <span className="text-sm font-semibold">{u.username}</span>
                 </Link>
-                {u.id !== "me" && (
+                {u.id !== s.me.id && (
                   <button onClick={() => s.toggleFollow(u.id)} className="rounded-lg border border-overlay-foreground/60 px-2.5 py-0.5 text-xs font-semibold">
                     {s.following.has(u.id) ? "Following" : "Follow"}
                   </button>
@@ -48,7 +48,7 @@ function Reels() {
               <button onClick={() => s.toggleLike(r.id)} className="flex flex-col items-center gap-1">
                 <Heart className={cn("size-7", liked && "fill-like text-like")} />{compact(r.likes)}
               </button>
-              <Link to="/p/$id" params={{ id: r.id }} className="flex flex-col items-center gap-1"><MessageCircle className="size-7" />{r.comments.length}</Link>
+              <Link to="/p/$id" params={{ id: r.id }} className="flex flex-col items-center gap-1"><MessageCircle className="size-7" />{r.commentCount}</Link>
               <button onClick={() => s.toggleSave(r.id)}><Bookmark className={cn("size-7", s.saved.has(r.id) && "fill-overlay-foreground")} /></button>
             </div>
           </section>

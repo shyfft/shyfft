@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Bookmark, Heart, MessageCircle, MoreHorizontal, Send, BadgeCheck } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { compact, timeAgo } from "@/lib/mock-data";
+import { compact, timeAgo } from "@/lib/format";
 import { useStore } from "@/lib/store";
 import type { Post } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -58,12 +58,12 @@ export function PostCard({ post }: { post: Post }) {
       <div className="space-y-1 px-4 pt-2 text-sm">
         <p className="font-semibold">{compact(post.likes)} likes</p>
         <p><span className="font-semibold">{user.username}</span> {post.caption}</p>
-        {post.comments.length > 0 && (
-          <Link to="/p/$id" params={{ id: post.id }} className="block text-muted-foreground">View all {post.comments.length} comments</Link>
+        {post.commentCount > 0 && (
+          <Link to="/p/$id" params={{ id: post.id }} className="block text-muted-foreground">View all {post.commentCount} comments</Link>
         )}
         <p className="text-xs uppercase text-muted-foreground">{timeAgo(post.createdAt)}</p>
       </div>
-      <PostMenu open={menu} onClose={() => setMenu(false)} userId={post.userId} />
+      <PostMenu open={menu} onClose={() => setMenu(false)} userId={post.userId} postId={post.id} />
     </article>
   );
 }

@@ -5,12 +5,12 @@ import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "./Avatar";
 
-const HIDE_NAV = ["/stories/", "/messages/", "/onboarding"];
+const HIDE_NAV = ["/stories/", "/messages/", "/onboarding", "/auth", "/reset-password"];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
-  const { me } = useStore();
-  const hide = HIDE_NAV.some((p) => pathname.startsWith(p));
+  const { me, ready } = useStore();
+  const hide = !ready || HIDE_NAV.some((p) => pathname.startsWith(p));
   const item = (to: "/" | "/explore" | "/reels", active: boolean, icon: ReactNode, label: string) => (
     <Link to={to} aria-label={label} className={cn("flex flex-1 items-center justify-center py-3 transition-transform active:scale-90", active ? "text-foreground" : "text-muted-foreground")}>
       {icon}

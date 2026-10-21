@@ -2,11 +2,10 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChevronLeft, Send } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { UserAvatar } from "@/components/shyfft/Avatar";
-import { ME_ID } from "@/lib/mock-data";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
-export const Route = createFileRoute("/messages/$id")({
+export const Route = createFileRoute("/_authenticated/messages/$id")({
   head: () => ({
     meta: [
       { title: "Chat — shyfft" },
@@ -21,12 +20,14 @@ export const Route = createFileRoute("/messages/$id")({
 function Chat() {
   const { id } = Route.useParams();
   const s = useStore();
-  const conv = s.conversations.find((c) => c.id === id);
-  const user = conv && s.getUser(conv.userId);
+  const ME_ID = useStore().me.id;
+  const conv = s.conversations.find((c) => c.id === id) ?? { id, userId: id, messages: [], unread: 0 };
+  const user = s.getUser(id);
   const [text, setText] = useState("");
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => end.current?.scrollIntoView({ behavior: "smooth" }), [conv?.messages.length]);
-  if (!conv || !user) return <p className="p-10 text-center text-muted-foreground">Conversation not found</p>;
+  useEffect(() => end.current?.scrollIntoView({ behavior: "smooth" }), [conv.messages.length]);
+  useEffect(() => { s.markConversationRead(id); }, [id, conv.unread]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!user) return <p className="p-10 text-center text-muted-foreground">Conversation not found</p>;
 
   return (
     <div className="flex h-dvh flex-col">
@@ -45,7 +46,7 @@ function Chat() {
         ))}
         <div ref={end} />
       </div>
-      <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) { s.sendMessage(conv.id, text.trim()); setText(""); } }}
+      <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) { s.sendMessage(id, text.trim()); setText(""); } }}
         className="flex items-center gap-2 border-t p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Message…" className="flex-1 rounded-full bg-muted px-4 py-2.5 text-sm outline-none" />
         <button aria-label="Send" disabled={!text.trim()} className="flex size-10 items-center justify-center rounded-full bg-brand text-primary-foreground disabled:opacity-40"><Send className="size-4" /></button>

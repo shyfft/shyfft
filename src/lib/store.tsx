@@ -1,12 +1,16 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ME_ID, seedConversations, seedNotifications, seedPosts, seedStories, seedUsers } from "./mock-data";
-import type { Conversation, Notification, Post, Story, User } from "./types";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
+import { avatarFallback } from "./format";
+import type { Comment, Conversation, Message, Notification, Post, Story, User } from "./types";
 
-// Local in-memory store. Each action maps 1:1 to a future backend call
-// (database insert/delete, storage upload, realtime channel for messages).
+type Tables = Database["public"]["Tables"];
 type Theme = "light" | "dark";
 
 type Store = {
+  ready: boolean;
+  authed: boolean;
   me: User;
   users: User[];
   posts: Post[];
@@ -25,38 +29,69 @@ type Store = {
   toggleSave: (postId: string) => void;
   toggleFollow: (userId: string) => void;
   toggleBlock: (userId: string) => void;
-  addComment: (postId: string, text: string) => void;
-  createPost: (p: Pick<Post, "media" | "mediaType" | "kind" | "caption" | "location">) => void;
-  createStory: (media: string) => void;
-  sendMessage: (convId: string, text: string) => void;
+  report: (userId: string, reason: string, postId?: string) => Promise<void>;
+  addComment: (postId: string, text: string) => Promise<void>;
+  createPost: (p: { file: File; kind: "post" | "reel"; caption: string; location?: string | undefined }) => Promise<void>;
+  createStory: (file: File) => Promise<void>;
+  sendMessage: (userId: string, text: string) => Promise<void>;
   openConversation: (userId: string) => string;
+  markConversationRead: (userId: string) => void;
   markNotificationsRead: () => void;
-  updateMe: (patch: Partial<User>) => void;
+  updateMe: (patch: { username?: string; name?: string; bio?: string; isPrivate?: boolean; onboarded?: boolean }) => Promise<string | null>;
+  uploadAvatar: (file: File) => Promise<void>;
   setTheme: (t: Theme) => void;
   setPrivateAccount: (v: boolean) => void;
+  signOut: () => Promise<void>;
+  refresh: () => Promise<void>;
 };
 
 const Ctx = createContext<Store | null>(null);
-const uid = () => Math.random().toString(36).slice(2, 10);
-const toggleIn = (s: Set<string>, id: string) => {
-  const n = new Set(s);
-  n.has(id) ? n.delete(id) : n.add(id);
-  return n;
-};
+const ts = (s: string) => new Date(s).getTime();
+const isPath = (v: string | null | undefined): v is string => !!v && !/^https?:/.test(v);
+
+async function signPaths(paths: string[]) {
+  const unique = [...new Set(paths.filter(isPath))];
+  const map = new Map<string, string>();
+  if (unique.length === 0) return map;
+  const { data } = await supabase.storage.from("media").createSignedUrls(unique, 60 * 60 * 24 * 7);
+  data?.forEach((d) => d.path && d.signedUrl && map.set(d.path, d.signedUrl));
+  return map;
+}
+
+function toUser(p: Tables["profiles"]["Row"], urls: Map<string, string>): User {
+  return {
+    id: p.id, username: p.username, name: p.name, bio: p.bio, verified: p.verified, isPrivate: p.is_private,
+    onboarded: p.onboarded, followers: p.followers_count, following: p.following_count, avatarPath: p.avatar_url,
+    avatar: isPath(p.avatar_url) ? urls.get(p.avatar_url) ?? avatarFallback(p.username) : p.avatar_url ?? avatarFallback(p.username),
+  };
+}
+
+async function uploadMedia(uid: string, file: File) {
+  const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
+  const path = `${uid}/${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabase.storage.from("media").upload(path, file, { contentType: file.type });
+  if (error) throw error;
+  return path;
+}
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [users, setUsers] = useState(seedUsers);
-  const [posts, setPosts] = useState(seedPosts);
-  const [stories, setStories] = useState(seedStories);
-  const [conversations, setConversations] = useState(seedConversations);
-  const [notifications, setNotifications] = useState(seedNotifications);
+  const [uid, setUid] = useState<string | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [users, setUsers] = useState<User[]>([]);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [stories, setStories] = useState<Story[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [liked, setLiked] = useState<Set<string>>(new Set());
   const [saved, setSaved] = useState<Set<string>>(new Set());
-  const [following, setFollowing] = useState<Set<string>>(new Set(["u1", "u2", "u3"]));
+  const [following, setFollowing] = useState<Set<string>>(new Set());
   const [blocked, setBlocked] = useState<Set<string>>(new Set());
   const [theme, setThemeState] = useState<Theme>("light");
-  const [privateAccount, setPrivateAccount] = useState(false);
+  const uidRef = useRef<string | null>(null);
+  uidRef.current = uid;
 
+  // Theme
   useEffect(() => {
     const t = localStorage.getItem("shyfft-theme") as Theme | null;
     if (t) setThemeState(t);
@@ -65,59 +100,211 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
-
   const setTheme = useCallback((t: Theme) => {
     setThemeState(t);
     localStorage.setItem("shyfft-theme", t);
   }, []);
 
-  const me = users.find((u) => u.id === ME_ID)!;
-
-  const value = useMemo<Store>(() => ({
-    me, users, posts: posts.filter((p) => !blocked.has(p.userId)),
-    stories: stories.filter((s) => Date.now() - s.createdAt < 24 * 3600_000 && !blocked.has(s.userId)),
-    conversations, notifications, liked, saved, following, blocked, theme, privateAccount,
-    getUser: (id) => users.find((u) => u.id === id),
-    byUsername: (n) => users.find((u) => u.username === n),
-    toggleLike: (id) => {
-      const was = liked.has(id);
-      setLiked((s) => toggleIn(s, id));
-      setPosts((ps) => ps.map((p) => (p.id === id ? { ...p, likes: p.likes + (was ? -1 : 1) } : p)));
-    },
-    toggleSave: (id) => setSaved((s) => toggleIn(s, id)),
-    toggleFollow: (id) => {
-      const was = following.has(id);
-      setFollowing((s) => toggleIn(s, id));
-      setUsers((us) => us.map((u) =>
-        u.id === id ? { ...u, followers: u.followers + (was ? -1 : 1) } :
-        u.id === ME_ID ? { ...u, following: u.following + (was ? -1 : 1) } : u));
-    },
-    toggleBlock: (id) => {
-      setBlocked((s) => toggleIn(s, id));
-      setFollowing((s) => { const n = new Set(s); n.delete(id); return n; });
-    },
-    addComment: (postId, text) => setPosts((ps) => ps.map((p) => p.id === postId
-      ? { ...p, comments: [...p.comments, { id: uid(), userId: ME_ID, text, createdAt: Date.now() }] } : p)),
-    createPost: (p) => setPosts((ps) => [{ ...p, id: uid(), userId: ME_ID, likes: 0, comments: [], createdAt: Date.now() }, ...ps]),
-    createStory: (media) => setStories((s) => [{ id: uid(), userId: ME_ID, media, createdAt: Date.now() }, ...s]),
-    sendMessage: (cid, text) => setConversations((cs) => cs.map((c) => c.id === cid
-      ? { ...c, messages: [...c.messages, { id: uid(), fromId: ME_ID, text, createdAt: Date.now() }] } : c)),
-    openConversation: (userId) => {
-      const ex = conversations.find((c) => c.userId === userId);
-      if (ex) {
-        setConversations((cs) => cs.map((c) => (c.id === ex.id ? { ...c, unread: 0 } : c)));
-        return ex.id;
+  // Auth
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "INITIAL_SESSION" || event === "USER_UPDATED") {
+        setUid(session?.user.id ?? null);
+        setAuthChecked(true);
       }
-      const id = uid();
-      setConversations((cs) => [{ id, userId, messages: [], unread: 0 }, ...cs]);
-      return id;
-    },
-    markNotificationsRead: () => setNotifications((ns) => ns.map((n) => ({ ...n, read: true }))),
-    updateMe: (patch) => setUsers((us) => us.map((u) => (u.id === ME_ID ? { ...u, ...patch } : u))),
-    setTheme, setPrivateAccount,
-  }), [me, users, posts, stories, conversations, notifications, liked, saved, following, blocked, theme, privateAccount, setTheme]);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  const load = useCallback(async (me: string) => {
+    const dayAgo = new Date(Date.now() - 24 * 3600_000).toISOString();
+    const [profiles, postsRes, likes, saves, follows, blocks, storiesRes, msgs, notifs] = await Promise.all([
+      supabase.from("profiles").select("*").limit(1000),
+      supabase.from("posts").select("*").order("created_at", { ascending: false }).limit(200),
+      supabase.from("likes").select("post_id").eq("user_id", me),
+      supabase.from("saves").select("post_id").eq("user_id", me),
+      supabase.from("follows").select("following_id").eq("follower_id", me),
+      supabase.from("blocks").select("blocked_id").eq("blocker_id", me),
+      supabase.from("stories").select("*").gt("created_at", dayAgo).order("created_at", { ascending: false }),
+      supabase.from("messages").select("*").or(`sender_id.eq.${me},recipient_id.eq.${me}`).order("created_at").limit(1000),
+      supabase.from("notifications").select("*").eq("user_id", me).order("created_at", { ascending: false }).limit(100),
+    ]);
+    const postRows = postsRes.data ?? [];
+    const commentsRes = postRows.length
+      ? await supabase.from("comments").select("*").in("post_id", postRows.map((p) => p.id)).order("created_at")
+      : { data: [] as Tables["comments"]["Row"][] };
+    const urls = await signPaths([
+      ...(profiles.data ?? []).map((p) => p.avatar_url ?? ""),
+      ...postRows.map((p) => p.media_url),
+      ...(storiesRes.data ?? []).map((s) => s.media_url),
+    ]);
+    const byPost = new Map<string, Comment[]>();
+    (commentsRes.data ?? []).forEach((c) => {
+      const list = byPost.get(c.post_id) ?? [];
+      list.push({ id: c.id, userId: c.user_id, text: c.text, createdAt: ts(c.created_at) });
+      byPost.set(c.post_id, list);
+    });
+    setUsers((profiles.data ?? []).map((p) => toUser(p, urls)));
+    setPosts(postRows.map((p) => ({
+      id: p.id, userId: p.user_id, media: urls.get(p.media_url) ?? p.media_url, mediaType: p.media_type as Post["mediaType"],
+      kind: p.kind as Post["kind"], caption: p.caption, likes: p.like_count, commentCount: p.comment_count,
+      comments: byPost.get(p.id) ?? [], createdAt: ts(p.created_at), location: p.location ?? undefined,
+    })));
+    setStories((storiesRes.data ?? []).map((s) => ({ id: s.id, userId: s.user_id, media: urls.get(s.media_url) ?? s.media_url, createdAt: ts(s.created_at) })));
+    setLiked(new Set((likes.data ?? []).map((l) => l.post_id)));
+    setSaved(new Set((saves.data ?? []).map((l) => l.post_id)));
+    setFollowing(new Set((follows.data ?? []).map((f) => f.following_id)));
+    setBlocked(new Set((blocks.data ?? []).map((b) => b.blocked_id)));
+    setMessages((msgs.data ?? []).map(toMessage));
+    setNotifications((notifs.data ?? []).map(toNotification));
+    setReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!uid) { setReady(false); return; }
+    load(uid);
+    // Realtime: new direct messages and notifications
+    const channel = supabase
+      .channel(`user-${uid}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `recipient_id=eq.${uid}` },
+        (p) => setMessages((m) => m.some((x) => x.id === (p.new as Tables["messages"]["Row"]).id) ? m : [...m, toMessage(p.new as Tables["messages"]["Row"])]))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${uid}` },
+        (p) => setNotifications((n) => [toNotification(p.new as Tables["notifications"]["Row"]), ...n]))
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [uid, load]);
+
+  const me = users.find((u) => u.id === uid);
+
+  const conversations = useMemo<Conversation[]>(() => {
+    if (!uid) return [];
+    const map = new Map<string, Message[]>();
+    messages.forEach((m) => {
+      const other = m.fromId === uid ? m.toId : m.fromId;
+      map.set(other, [...(map.get(other) ?? []), m]);
+    });
+    return [...map.entries()]
+      .map(([userId, ms]) => ({ id: userId, userId, messages: ms, unread: ms.filter((m) => m.toId === uid && !m.read).length }))
+      .sort((a, b) => (b.messages.at(-1)?.createdAt ?? 0) - (a.messages.at(-1)?.createdAt ?? 0));
+  }, [messages, uid]);
+
+  const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : "Something went wrong");
+
+  const value = useMemo<Store>(() => {
+    const myId = uid ?? "";
+    return {
+      ready: ready && !!me, authed: authChecked && !!uid,
+      me: me as User, users, conversations, notifications, liked, saved, following, blocked, theme,
+      privateAccount: !!me?.isPrivate,
+      posts: posts.filter((p) => !blocked.has(p.userId)),
+      stories: stories.filter((s) => !blocked.has(s.userId)),
+      getUser: (id) => users.find((u) => u.id === id),
+      byUsername: (n) => users.find((u) => u.username === n),
+      toggleLike: (id) => {
+        const was = liked.has(id);
+        setLiked((s) => { const n = new Set(s); was ? n.delete(id) : n.add(id); return n; });
+        setPosts((ps) => ps.map((p) => (p.id === id ? { ...p, likes: p.likes + (was ? -1 : 1) } : p)));
+        (was ? supabase.from("likes").delete().match({ user_id: myId, post_id: id }) : supabase.from("likes").insert({ user_id: myId, post_id: id }))
+          .then(({ error }) => error && fail(error));
+      },
+      toggleSave: (id) => {
+        const was = saved.has(id);
+        setSaved((s) => { const n = new Set(s); was ? n.delete(id) : n.add(id); return n; });
+        (was ? supabase.from("saves").delete().match({ user_id: myId, post_id: id }) : supabase.from("saves").insert({ user_id: myId, post_id: id }))
+          .then(({ error }) => error && fail(error));
+      },
+      toggleFollow: (id) => {
+        const was = following.has(id);
+        setFollowing((s) => { const n = new Set(s); was ? n.delete(id) : n.add(id); return n; });
+        setUsers((us) => us.map((u) =>
+          u.id === id ? { ...u, followers: u.followers + (was ? -1 : 1) } :
+          u.id === myId ? { ...u, following: u.following + (was ? -1 : 1) } : u));
+        (was ? supabase.from("follows").delete().match({ follower_id: myId, following_id: id }) : supabase.from("follows").insert({ follower_id: myId, following_id: id }))
+          .then(({ error }) => { if (error) fail(error); else if (uidRef.current) load(uidRef.current); });
+      },
+      toggleBlock: (id) => {
+        const was = blocked.has(id);
+        setBlocked((s) => { const n = new Set(s); was ? n.delete(id) : n.add(id); return n; });
+        if (!was) setFollowing((s) => { const n = new Set(s); n.delete(id); return n; });
+        (was ? supabase.from("blocks").delete().match({ blocker_id: myId, blocked_id: id }) : supabase.from("blocks").insert({ blocker_id: myId, blocked_id: id }))
+          .then(({ error }) => error && fail(error));
+      },
+      report: async (userId, reason, postId) => {
+        const { error } = await supabase.from("reports").insert({ reporter_id: myId, target_user_id: userId, post_id: postId ?? null, reason });
+        if (error) throw error;
+      },
+      addComment: async (postId, text) => {
+        const { data, error } = await supabase.from("comments").insert({ post_id: postId, user_id: myId, text }).select().single();
+        if (error) return fail(error);
+        setPosts((ps) => ps.map((p) => p.id === postId
+          ? { ...p, commentCount: p.commentCount + 1, comments: [...p.comments, { id: data.id, userId: myId, text, createdAt: ts(data.created_at) }] } : p));
+      },
+      createPost: async ({ file, kind, caption, location }) => {
+        const path = await uploadMedia(myId, file);
+        const { error } = await supabase.from("posts").insert({
+          user_id: myId, media_url: path, media_type: file.type.startsWith("video") ? "video" : "image", kind, caption, location: location ?? null,
+        });
+        if (error) throw error;
+        await load(myId);
+      },
+      createStory: async (file) => {
+        const path = await uploadMedia(myId, file);
+        const { error } = await supabase.from("stories").insert({ user_id: myId, media_url: path });
+        if (error) throw error;
+        await load(myId);
+      },
+      sendMessage: async (userId, text) => {
+        const { data, error } = await supabase.from("messages").insert({ sender_id: myId, recipient_id: userId, text }).select().single();
+        if (error) return fail(error);
+        setMessages((m) => [...m, toMessage(data)]);
+      },
+      openConversation: (userId) => userId,
+      markConversationRead: (userId) => {
+        if (!messages.some((m) => m.fromId === userId && m.toId === myId && !m.read)) return;
+        setMessages((ms) => ms.map((m) => (m.fromId === userId && m.toId === myId ? { ...m, read: true } : m)));
+        supabase.from("messages").update({ read_at: new Date().toISOString() }).match({ sender_id: userId, recipient_id: myId }).is("read_at", null).then();
+      },
+      markNotificationsRead: () => {
+        setNotifications((ns) => ns.map((n) => ({ ...n, read: true })));
+        supabase.from("notifications").update({ read: true }).eq("user_id", myId).eq("read", false).then();
+      },
+      updateMe: async (patch) => {
+        const { error } = await supabase.from("profiles").update({
+          ...(patch.username !== undefined && { username: patch.username }),
+          ...(patch.name !== undefined && { name: patch.name }),
+          ...(patch.bio !== undefined && { bio: patch.bio }),
+          ...(patch.isPrivate !== undefined && { is_private: patch.isPrivate }),
+          ...(patch.onboarded !== undefined && { onboarded: patch.onboarded }),
+        }).eq("id", myId);
+        if (error) return error.code === "23505" ? "That username is taken" : error.message;
+        setUsers((us) => us.map((u) => (u.id === myId ? { ...u, ...patch } : u)));
+        return null;
+      },
+      uploadAvatar: async (file) => {
+        const path = await uploadMedia(myId, file);
+        const { error } = await supabase.from("profiles").update({ avatar_url: path }).eq("id", myId);
+        if (error) throw error;
+        const url = URL.createObjectURL(file);
+        setUsers((us) => us.map((u) => (u.id === myId ? { ...u, avatar: url, avatarPath: path } : u)));
+      },
+      setTheme,
+      setPrivateAccount: (v) => {
+        setUsers((us) => us.map((u) => (u.id === myId ? { ...u, isPrivate: v } : u)));
+        supabase.from("profiles").update({ is_private: v }).eq("id", myId).then(({ error }) => error && fail(error));
+      },
+      signOut: async () => { await supabase.auth.signOut(); },
+      refresh: async () => { if (uidRef.current) await load(uidRef.current); },
+    };
+  }, [uid, ready, authChecked, me, users, posts, stories, messages, conversations, notifications, liked, saved, following, blocked, theme, setTheme, load]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+function toMessage(m: Tables["messages"]["Row"]): Message {
+  return { id: m.id, fromId: m.sender_id, toId: m.recipient_id, text: m.text, createdAt: ts(m.created_at), read: !!m.read_at };
+}
+function toNotification(n: Tables["notifications"]["Row"]): Notification {
+  return { id: n.id, type: n.type as Notification["type"], userId: n.actor_id, postId: n.post_id ?? undefined, text: n.text ?? undefined, createdAt: ts(n.created_at), read: n.read };
 }
 
 export function useStore() {

@@ -2,10 +2,10 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { UserAvatar } from "@/components/shyfft/Avatar";
-import { timeAgo } from "@/lib/mock-data";
+import { timeAgo } from "@/lib/format";
 import { useStore } from "@/lib/store";
 
-export const Route = createFileRoute("/stories/$username")({
+export const Route = createFileRoute("/_authenticated/stories/$username")({
   head: () => ({
     meta: [
       { title: "Story — shyfft" },

@@ -3,10 +3,10 @@ import { ChevronLeft, Search } from "lucide-react";
 import { useState } from "react";
 import { TopBar } from "@/components/shyfft/AppShell";
 import { UserAvatar } from "@/components/shyfft/Avatar";
-import { timeAgo } from "@/lib/mock-data";
+import { timeAgo } from "@/lib/format";
 import { useStore } from "@/lib/store";
 
-export const Route = createFileRoute("/messages")({
+export const Route = createFileRoute("/_authenticated/messages")({
   head: () => ({
     meta: [
       { title: "Messages — shyfft" },
@@ -50,7 +50,7 @@ function Inbox() {
                 <div className="min-w-0 flex-1 text-sm">
                   <p className={c.unread ? "font-bold" : "font-medium"}>{u.name}</p>
                   <p className={`truncate ${c.unread ? "font-semibold" : "text-muted-foreground"}`}>
-                    {last ? `${last.fromId === "me" ? "You: " : ""}${last.text} · ${timeAgo(last.createdAt)}` : "Say hi 👋"}
+                    {last ? `${last.fromId === s.me.id ? "You: " : ""}${last.text} · ${timeAgo(last.createdAt)}` : "Say hi 👋"}
                   </p>
                 </div>
                 {c.unread > 0 && <span className="size-2.5 rounded-full bg-brand" />}
