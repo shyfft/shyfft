@@ -1,24 +1,50 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { Heart, MessageCircle, Moon, Sun } from "lucide-react";
+import { Logo } from "@/components/shyfft/Logo";
+import { PostCard } from "@/components/shyfft/PostCard";
+import { StoriesBar } from "@/components/shyfft/StoriesBar";
+import { useStore } from "@/lib/store";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
 export const Route = createFileRoute("/")({
-  component: Index,
+  head: () => ({
+    meta: [
+      { title: "shyfft — Home" },
+      { name: "description", content: "Your shyfft feed: photos, reels and stories from people you follow." },
+      { property: "og:title", content: "shyfft — Home" },
+      { property: "og:description", content: "Your shyfft feed: photos, reels and stories from people you follow." },
+    ],
+  }),
+  component: Home,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
-function Index() {
+function Home() {
+  const { posts, notifications, conversations, theme, setTheme } = useStore();
+  const unreadN = notifications.some((n) => !n.read);
+  const unreadM = conversations.reduce((a, c) => a + c.unread, 0);
+  const feed = posts.filter((p) => p.kind === "post");
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
+    <>
+      <header className="glass sticky top-0 z-30 flex h-14 items-center justify-between border-b px-4">
+        <Logo />
+        <div className="flex items-center gap-5">
+          <button aria-label="Toggle theme" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
+            {theme === "dark" ? <Sun className="size-6" /> : <Moon className="size-6" />}
+          </button>
+          <Link to="/notifications" aria-label="Notifications" className="relative">
+            <Heart className="size-6" />
+            {unreadN && <span className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full bg-like" />}
+          </Link>
+          <Link to="/messages" aria-label="Messages" className="relative">
+            <MessageCircle className="size-6" />
+            {unreadM > 0 && (
+              <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold text-primary-foreground">{unreadM}</span>
+            )}
+          </Link>
+        </div>
+      </header>
+      <StoriesBar />
+      {feed.map((p) => <PostCard key={p.id} post={p} />)}
+      <p className="py-10 text-center text-sm text-muted-foreground">You're all caught up ✨</p>
+    </>
   );
 }

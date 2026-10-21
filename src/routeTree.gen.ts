@@ -10,33 +10,179 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as CreateRouteImport } from './routes/create'
+import { Route as ExploreRouteImport } from './routes/explore'
+import { Route as MessagesRouteImport } from './routes/messages'
+import { Route as NotificationsRouteImport } from './routes/notifications'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as ReelsRouteImport } from './routes/reels'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as MessagesIdRouteImport } from './routes/messages.$id'
+import { Route as PIdRouteImport } from './routes/p.$id'
+import { Route as StoriesUsernameRouteImport } from './routes/stories.$username'
+import { Route as UUsernameRouteImport } from './routes/u.$username'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CreateRoute = CreateRouteImport.update({
+  id: '/create',
+  path: '/create',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExploreRoute = ExploreRouteImport.update({
+  id: '/explore',
+  path: '/explore',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MessagesRoute = MessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NotificationsRoute = NotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OnboardingRoute = OnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReelsRoute = ReelsRouteImport.update({
+  id: '/reels',
+  path: '/reels',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MessagesIdRoute = MessagesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => MessagesRoute,
+} as any)
+const PIdRoute = PIdRouteImport.update({
+  id: '/p/$id',
+  path: '/p/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StoriesUsernameRoute = StoriesUsernameRouteImport.update({
+  id: '/stories/$username',
+  path: '/stories/$username',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UUsernameRoute = UUsernameRouteImport.update({
+  id: '/u/$username',
+  path: '/u/$username',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/create': typeof CreateRoute
+  '/explore': typeof ExploreRoute
+  '/messages': typeof MessagesRouteWithChildren
+  '/notifications': typeof NotificationsRoute
+  '/onboarding': typeof OnboardingRoute
+  '/reels': typeof ReelsRoute
+  '/settings': typeof SettingsRoute
+  '/messages/$id': typeof MessagesIdRoute
+  '/p/$id': typeof PIdRoute
+  '/stories/$username': typeof StoriesUsernameRoute
+  '/u/$username': typeof UUsernameRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/create': typeof CreateRoute
+  '/explore': typeof ExploreRoute
+  '/messages': typeof MessagesRouteWithChildren
+  '/notifications': typeof NotificationsRoute
+  '/onboarding': typeof OnboardingRoute
+  '/reels': typeof ReelsRoute
+  '/settings': typeof SettingsRoute
+  '/messages/$id': typeof MessagesIdRoute
+  '/p/$id': typeof PIdRoute
+  '/stories/$username': typeof StoriesUsernameRoute
+  '/u/$username': typeof UUsernameRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/create': typeof CreateRoute
+  '/explore': typeof ExploreRoute
+  '/messages': typeof MessagesRouteWithChildren
+  '/notifications': typeof NotificationsRoute
+  '/onboarding': typeof OnboardingRoute
+  '/reels': typeof ReelsRoute
+  '/settings': typeof SettingsRoute
+  '/messages/$id': typeof MessagesIdRoute
+  '/p/$id': typeof PIdRoute
+  '/stories/$username': typeof StoriesUsernameRoute
+  '/u/$username': typeof UUsernameRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/create'
+    | '/explore'
+    | '/messages'
+    | '/notifications'
+    | '/onboarding'
+    | '/reels'
+    | '/settings'
+    | '/messages/$id'
+    | '/p/$id'
+    | '/stories/$username'
+    | '/u/$username'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/create'
+    | '/explore'
+    | '/messages'
+    | '/notifications'
+    | '/onboarding'
+    | '/reels'
+    | '/settings'
+    | '/messages/$id'
+    | '/p/$id'
+    | '/stories/$username'
+    | '/u/$username'
+  id:
+    | '__root__'
+    | '/'
+    | '/create'
+    | '/explore'
+    | '/messages'
+    | '/notifications'
+    | '/onboarding'
+    | '/reels'
+    | '/settings'
+    | '/messages/$id'
+    | '/p/$id'
+    | '/stories/$username'
+    | '/u/$username'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CreateRoute: typeof CreateRoute
+  ExploreRoute: typeof ExploreRoute
+  MessagesRoute: typeof MessagesRouteWithChildren
+  NotificationsRoute: typeof NotificationsRoute
+  OnboardingRoute: typeof OnboardingRoute
+  ReelsRoute: typeof ReelsRoute
+  SettingsRoute: typeof SettingsRoute
+  PIdRoute: typeof PIdRoute
+  StoriesUsernameRoute: typeof StoriesUsernameRoute
+  UUsernameRoute: typeof UUsernameRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +194,110 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/create': {
+      id: '/create'
+      path: '/create'
+      fullPath: '/create'
+      preLoaderRoute: typeof CreateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/explore': {
+      id: '/explore'
+      path: '/explore'
+      fullPath: '/explore'
+      preLoaderRoute: typeof ExploreRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/messages': {
+      id: '/messages'
+      path: '/messages'
+      fullPath: '/messages'
+      preLoaderRoute: typeof MessagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notifications': {
+      id: '/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof NotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reels': {
+      id: '/reels'
+      path: '/reels'
+      fullPath: '/reels'
+      preLoaderRoute: typeof ReelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/messages/$id': {
+      id: '/messages/$id'
+      path: '/$id'
+      fullPath: '/messages/$id'
+      preLoaderRoute: typeof MessagesIdRouteImport
+      parentRoute: typeof MessagesRoute
+    }
+    '/p/$id': {
+      id: '/p/$id'
+      path: '/p/$id'
+      fullPath: '/p/$id'
+      preLoaderRoute: typeof PIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/stories/$username': {
+      id: '/stories/$username'
+      path: '/stories/$username'
+      fullPath: '/stories/$username'
+      preLoaderRoute: typeof StoriesUsernameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/u/$username': {
+      id: '/u/$username'
+      path: '/u/$username'
+      fullPath: '/u/$username'
+      preLoaderRoute: typeof UUsernameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
+interface MessagesRouteChildren {
+  MessagesIdRoute: typeof MessagesIdRoute
+}
+
+const MessagesRouteChildren: MessagesRouteChildren = {
+  MessagesIdRoute: MessagesIdRoute,
+}
+
+const MessagesRouteWithChildren = MessagesRoute._addFileChildren(
+  MessagesRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CreateRoute: CreateRoute,
+  ExploreRoute: ExploreRoute,
+  MessagesRoute: MessagesRouteWithChildren,
+  NotificationsRoute: NotificationsRoute,
+  OnboardingRoute: OnboardingRoute,
+  ReelsRoute: ReelsRoute,
+  SettingsRoute: SettingsRoute,
+  PIdRoute: PIdRoute,
+  StoriesUsernameRoute: StoriesUsernameRoute,
+  UUsernameRoute: UUsernameRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
