@@ -235,7 +235,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       addComment: async (postId, text) => {
         const { data, error } = await supabase.from("comments").insert({ post_id: postId, user_id: myId, text }).select().single();
-        if (error) return fail(error);
+        if (error) { fail(error); return; }
         setPosts((ps) => ps.map((p) => p.id === postId
           ? { ...p, commentCount: p.commentCount + 1, comments: [...p.comments, { id: data.id, userId: myId, text, createdAt: ts(data.created_at) }] } : p));
       },
@@ -255,7 +255,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       sendMessage: async (userId, text) => {
         const { data, error } = await supabase.from("messages").insert({ sender_id: myId, recipient_id: userId, text }).select().single();
-        if (error) return fail(error);
+        if (error) { fail(error); return; }
         setMessages((m) => [...m, toMessage(data)]);
       },
       openConversation: (userId) => userId,
