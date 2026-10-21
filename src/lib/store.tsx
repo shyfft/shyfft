@@ -43,6 +43,9 @@ type Store = {
   setPrivateAccount: (v: boolean) => void;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
+  /** UI hint only; the database enforces admin rights in set_user_verified. */
+  isAdmin: boolean;
+  setVerified: (userId: string, verified: boolean) => Promise<void>;
 };
 
 const Ctx = createContext<Store | null>(null);
@@ -78,6 +81,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [uid, setUid] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [ready, setReady] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
   const [stories, setStories] = useState<Story[]>([]);
@@ -157,6 +161,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setBlocked(new Set((blocks.data ?? []).map((b) => b.blocked_id)));
     setMessages((msgs.data ?? []).map(toMessage));
     setNotifications((notifs.data ?? []).map(toNotification));
+    const adminRes = await supabase.rpc("has_role", { _user_id: me, _role: "admin" });
+    setIsAdmin(adminRes.data === true);
     setReady(true);
   }, []);
 
@@ -294,8 +300,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       signOut: async () => { await supabase.auth.signOut(); },
       refresh: async () => { if (uidRef.current) await load(uidRef.current); },
+      isAdmin,
+      setVerified: async (userId, verified) => {
+        const { error } = await supabase.rpc("set_user_verified", { _target: userId, _verified: verified });
+        if (error) throw error;
+        setUsers((us) => us.map((u) => (u.id === userId ? { ...u, verified } : u)));
+      },
     };
-  }, [uid, ready, authChecked, me, users, posts, stories, messages, conversations, notifications, liked, saved, following, blocked, theme, setTheme, load]);
+  }, [uid, ready, authChecked, me, users, posts, stories, messages, conversations, notifications, liked, saved, following, blocked, theme, setTheme, load, isAdmin]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { UserAvatar } from "@/components/shyfft/Avatar";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { VerifiedBadge } from "@/components/shyfft/VerifiedBadge";
 
 export const Route = createFileRoute("/_authenticated/messages/$id")({
   head: () => ({
@@ -35,7 +36,7 @@ function Chat() {
         <Link to="/messages" aria-label="Back"><ChevronLeft className="size-6" /></Link>
         <Link to="/u/$username" params={{ username: user.username }} className="flex items-center gap-2">
           <UserAvatar user={user} size={34} />
-          <div className="leading-tight"><p className="text-sm font-semibold">{user.name}</p><p className="text-xs text-muted-foreground">@{user.username}</p></div>
+          <div className="leading-tight"><p className="flex items-center gap-1 text-sm font-semibold">{user.name}<VerifiedBadge show={user.verified} className="size-3.5" /></p><p className="text-xs text-muted-foreground">@{user.username}</p></div>
         </Link>
       </header>
       <div className="flex-1 space-y-2 overflow-y-auto p-4">

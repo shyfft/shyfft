@@ -6,6 +6,7 @@ import { UserAvatar } from "@/components/shyfft/Avatar";
 import { PostCard } from "@/components/shyfft/PostCard";
 import { timeAgo } from "@/lib/format";
 import { useStore } from "@/lib/store";
+import { VerifiedBadge } from "@/components/shyfft/VerifiedBadge";
 
 export const Route = createFileRoute("/_authenticated/p/$id")({
   head: () => ({
@@ -39,7 +40,7 @@ function PostPage() {
               return (
                 <li key={c.id} className="flex gap-3 text-sm">
                   <Link to="/u/$username" params={{ username: u.username }}><UserAvatar user={u} size={32} /></Link>
-                  <div><span className="font-semibold">{u.username}</span> {c.text}<p className="text-xs text-muted-foreground">{timeAgo(c.createdAt)}</p></div>
+                  <div><span className="font-semibold">{u.username}</span><VerifiedBadge show={u.verified} className="ml-0.5 size-3.5" /> {c.text}<p className="text-xs text-muted-foreground">{timeAgo(c.createdAt)}</p></div>
                 </li>
               );
             })}

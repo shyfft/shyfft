@@ -3,6 +3,7 @@ import { Film, Search, X } from "lucide-react";
 import { useState } from "react";
 import { UserAvatar } from "@/components/shyfft/Avatar";
 import { useStore } from "@/lib/store";
+import { VerifiedBadge } from "@/components/shyfft/VerifiedBadge";
 
 export const Route = createFileRoute("/_authenticated/explore")({
   head: () => ({
@@ -41,7 +42,7 @@ function Explore() {
               <Link to="/u/$username" params={{ username: u.username }} className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted">
                 <UserAvatar user={u} size={44} />
                 <div className="text-sm leading-tight">
-                  <p className="font-semibold">{u.username}</p>
+                  <p className="flex items-center gap-1 font-semibold">{u.username}<VerifiedBadge show={u.verified} className="size-3.5" /></p>
                   <p className="text-muted-foreground">{u.name}</p>
                 </div>
               </Link>

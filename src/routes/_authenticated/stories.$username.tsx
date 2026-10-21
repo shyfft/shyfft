@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { UserAvatar } from "@/components/shyfft/Avatar";
 import { timeAgo } from "@/lib/format";
 import { useStore } from "@/lib/store";
+import { VerifiedBadge } from "@/components/shyfft/VerifiedBadge";
 
 export const Route = createFileRoute("/_authenticated/stories/$username")({
   head: () => ({
@@ -60,7 +61,7 @@ function StoryViewer() {
         </div>
         <div className="mt-3 flex items-center gap-2">
           <UserAvatar user={user} size={32} />
-          <span className="text-sm font-semibold">{user.username}</span>
+          <span className="text-sm font-semibold">{user.username}</span><VerifiedBadge show={user.verified} />
           <span className="text-xs opacity-70">{timeAgo(story.createdAt)}</span>
           <button aria-label="Close" onClick={() => nav({ to: "/" })} className="ml-auto"><X className="size-6" /></button>
         </div>

@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Bookmark, Heart, MessageCircle, MoreHorizontal, Send, BadgeCheck } from "lucide-react";
+import { Bookmark, Heart, MessageCircle, MoreHorizontal, Send } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { compact, timeAgo } from "@/lib/format";
@@ -8,6 +8,7 @@ import type { Post } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "./Avatar";
 import { PostMenu } from "./PostMenu";
+import { VerifiedBadge } from "@/components/shyfft/VerifiedBadge";
 
 export function PostCard({ post }: { post: Post }) {
   const s = useStore();
@@ -29,7 +30,7 @@ export function PostCard({ post }: { post: Post }) {
         <Link to="/u/$username" params={{ username: user.username }} className="flex min-w-0 flex-1 items-center gap-3">
           <UserAvatar user={user} size={34} ring />
           <div className="min-w-0 leading-tight">
-            <p className="flex items-center gap-1 truncate text-sm font-semibold">{user.username}{user.verified && <BadgeCheck className="size-4 text-primary" />}</p>
+            <p className="flex items-center gap-1 truncate text-sm font-semibold">{user.username}<VerifiedBadge show={user.verified} /></p>
             {post.location && <p className="truncate text-xs text-muted-foreground">{post.location}</p>}
           </div>
         </Link>
@@ -57,7 +58,7 @@ export function PostCard({ post }: { post: Post }) {
       </div>
       <div className="space-y-1 px-4 pt-2 text-sm">
         <p className="font-semibold">{compact(post.likes)} likes</p>
-        <p><span className="font-semibold">{user.username}</span> {post.caption}</p>
+        <p><span className="font-semibold">{user.username}</span><VerifiedBadge show={user.verified} className="ml-0.5 size-3.5" /> {post.caption}</p>
         {post.commentCount > 0 && (
           <Link to="/p/$id" params={{ id: post.id }} className="block text-muted-foreground">View all {post.commentCount} comments</Link>
         )}

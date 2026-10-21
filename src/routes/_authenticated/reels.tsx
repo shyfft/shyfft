@@ -4,6 +4,7 @@ import { UserAvatar } from "@/components/shyfft/Avatar";
 import { compact } from "@/lib/format";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { VerifiedBadge } from "@/components/shyfft/VerifiedBadge";
 
 export const Route = createFileRoute("/_authenticated/reels")({
   head: () => ({
@@ -34,7 +35,7 @@ function Reels() {
               <div className="flex items-center gap-2">
                 <Link to="/u/$username" params={{ username: u.username }} className="flex items-center gap-2">
                   <UserAvatar user={u} size={32} />
-                  <span className="text-sm font-semibold">{u.username}</span>
+                  <span className="text-sm font-semibold">{u.username}</span><VerifiedBadge show={u.verified} />
                 </Link>
                 {u.id !== s.me.id && (
                   <button onClick={() => s.toggleFollow(u.id)} className="rounded-lg border border-overlay-foreground/60 px-2.5 py-0.5 text-xs font-semibold">
