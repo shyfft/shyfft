@@ -23,7 +23,7 @@ function Gate() {
   }, [s.ready, s.me, pathname, nav]);
   if (!s.ready) {
     return (
-      <div className="flex h-dvh flex-col items-center justify-center gap-8">
+      <div className="relative flex h-dvh flex-col items-center justify-center gap-8">
         <div className="animate-pulse"><LogoMark size={56} /></div>
         <MadeWithLove className="absolute bottom-8" />
       </div>
