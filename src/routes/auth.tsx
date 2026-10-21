@@ -101,6 +101,7 @@ function AuthPage() {
           {mode === "in" ? "Sign up" : "Sign in"}
         </button>
       </p>
+      <MadeWithLove className="pt-2" />
     </div>
   );
 }

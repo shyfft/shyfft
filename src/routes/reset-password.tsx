@@ -3,6 +3,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { LogoMark } from "@/components/shyfft/Logo";
+import { MadeWithLove } from "@/components/shyfft/MadeWithLove";
 
 export const Route = createFileRoute("/reset-password")({
   head: () => ({
