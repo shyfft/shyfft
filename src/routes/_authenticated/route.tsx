@@ -1,0 +1,31 @@
+import { createFileRoute, Outlet, redirect, useLocation, useNavigate } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { LogoMark } from "@/components/shyfft/Logo";
+import { useStore } from "@/lib/store";
+
+export const Route = createFileRoute("/_authenticated")({
+  ssr: false,
+  beforeLoad: async () => {
+    const { data } = await supabase.auth.getUser();
+    if (!data.user) throw redirect({ to: "/auth" });
+  },
+  component: Gate,
+});
+
+function Gate() {
+  const s = useStore();
+  const { pathname } = useLocation();
+  const nav = useNavigate();
+  useEffect(() => {
+    if (s.ready && !s.me.onboarded && pathname !== "/onboarding") nav({ to: "/onboarding" });
+  }, [s.ready, s.me, pathname, nav]);
+  if (!s.ready) {
+    return (
+      <div className="flex h-dvh items-center justify-center">
+        <div className="animate-pulse"><LogoMark size={56} /></div>
+      </div>
+    );
+  }
+  return <Outlet />;
+}

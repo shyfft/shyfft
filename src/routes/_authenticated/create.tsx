@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 
 type Tab = "post" | "reel" | "story";
 
-export const Route = createFileRoute("/create")({
+export const Route = createFileRoute("/_authenticated/create")({
   validateSearch: (s: Record<string, unknown>): { tab?: Tab | undefined } =>
     ({ tab: s["tab"] === "reel" || s["tab"] === "story" ? (s["tab"] as Tab) : undefined }),
   head: () => ({
@@ -25,35 +25,44 @@ export const Route = createFileRoute("/create")({
 function Create() {
   const { tab: initial } = Route.useSearch();
   const [tab, setTab] = useState<Tab>(initial ?? "post");
-  const [file, setFile] = useState<{ url: string; type: "image" | "video" } | null>(null);
+  const [file, setFile] = useState<{ url: string; type: "image" | "video"; raw: File } | null>(null);
+  const [busy, setBusy] = useState(false);
   const [caption, setCaption] = useState("");
   const [loc, setLoc] = useState("");
   const input = useRef<HTMLInputElement>(null);
   const s = useStore();
   const nav = useNavigate();
 
-  // Later: upload to media storage and save the public URL instead of a blob URL.
   const pick = (f?: File) => {
     if (!f) return;
-    setFile({ url: URL.createObjectURL(f), type: f.type.startsWith("video") ? "video" : "image" });
+    if (f.size > 50 * 1024 * 1024) { toast.error("Max file size is 50 MB"); return; }
+    setFile({ url: URL.createObjectURL(f), type: f.type.startsWith("video") ? "video" : "image", raw: f });
   };
 
-  const share = () => {
+  const share = async () => {
     if (!file) { toast.error("Pick a photo or video first"); return; }
-    if (tab === "story") {
-      s.createStory(file.url);
-      toast.success("Story shared for 24 hours");
-      nav({ to: "/" });
-    } else {
-      s.createPost({ media: file.url, mediaType: file.type, kind: tab, caption, location: loc || undefined });
-      toast.success(tab === "reel" ? "Reel shared" : "Post shared");
-      nav({ to: tab === "reel" ? "/reels" : "/" });
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (tab === "story") {
+        await s.createStory(file.raw);
+        toast.success("Story shared for 24 hours");
+        nav({ to: "/" });
+      } else {
+        await s.createPost({ file: file.raw, kind: tab, caption, location: loc || undefined });
+        toast.success(tab === "reel" ? "Reel shared" : "Post shared");
+        nav({ to: tab === "reel" ? "/reels" : "/" });
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
     <>
-      <TopBar title="New" right={<button onClick={share} className="text-sm font-bold text-primary">Share</button>} />
+      <TopBar title="New" right={<button onClick={share} disabled={busy} className="text-sm font-bold text-primary disabled:opacity-50">{busy ? "Sharing…" : "Share"}</button>} />
       <div className="flex gap-2 p-3">
         {(["post", "reel", "story"] as Tab[]).map((t) => (
           <button key={t} onClick={() => setTab(t)}

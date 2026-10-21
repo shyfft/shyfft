@@ -4,11 +4,11 @@ import { useState } from "react";
 import { TopBar } from "@/components/shyfft/AppShell";
 import { UserAvatar } from "@/components/shyfft/Avatar";
 import { PostMenu } from "@/components/shyfft/PostMenu";
-import { compact, ME_ID } from "@/lib/mock-data";
+import { compact } from "@/lib/format";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
-export const Route = createFileRoute("/u/$username")({
+export const Route = createFileRoute("/_authenticated/u/$username")({
   head: ({ params }) => ({
     meta: [
       { title: `@${params.username} — shyfft` },
@@ -23,6 +23,7 @@ export const Route = createFileRoute("/u/$username")({
 function Profile() {
   const { username } = Route.useParams();
   const s = useStore();
+  const ME_ID = useStore().me.id;
   const nav = useNavigate();
   const [tab, setTab] = useState<"posts" | "reels" | "saved">("posts");
   const [menu, setMenu] = useState(false);

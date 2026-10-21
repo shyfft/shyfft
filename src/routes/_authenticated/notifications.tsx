@@ -3,11 +3,11 @@ import { ChevronLeft } from "lucide-react";
 import { useEffect } from "react";
 import { TopBar } from "@/components/shyfft/AppShell";
 import { UserAvatar } from "@/components/shyfft/Avatar";
-import { timeAgo } from "@/lib/mock-data";
+import { timeAgo } from "@/lib/format";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
-export const Route = createFileRoute("/notifications")({
+export const Route = createFileRoute("/_authenticated/notifications")({
   head: () => ({
     meta: [
       { title: "Notifications — shyfft" },

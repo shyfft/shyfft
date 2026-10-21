@@ -4,10 +4,10 @@ import { useState } from "react";
 import { TopBar } from "@/components/shyfft/AppShell";
 import { UserAvatar } from "@/components/shyfft/Avatar";
 import { PostCard } from "@/components/shyfft/PostCard";
-import { timeAgo } from "@/lib/mock-data";
+import { timeAgo } from "@/lib/format";
 import { useStore } from "@/lib/store";
 
-export const Route = createFileRoute("/p/$id")({
+export const Route = createFileRoute("/_authenticated/p/$id")({
   head: () => ({
     meta: [
       { title: "Post — shyfft" },
