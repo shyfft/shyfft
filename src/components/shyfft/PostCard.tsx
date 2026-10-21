@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Bookmark, Heart, MessageCircle, MoreHorizontal, Send, BadgeCheck } from "lucide-react";
+import { Bookmark, Heart, MessageCircle, MoreHorizontal, Send } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { compact, timeAgo } from "@/lib/format";

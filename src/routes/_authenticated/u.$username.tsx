@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Bookmark, Film, Grid3x3, Lock, Menu, MoreHorizontal } from "lucide-react";
+import { BadgeCheck, Bookmark, Film, Grid3x3, Lock, Menu, MoreHorizontal } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { TopBar } from "@/components/shyfft/AppShell";
 import { UserAvatar } from "@/components/shyfft/Avatar";
 import { PostMenu } from "@/components/shyfft/PostMenu";
@@ -28,6 +29,7 @@ function Profile() {
   const nav = useNavigate();
   const [tab, setTab] = useState<"posts" | "reels" | "saved">("posts");
   const [menu, setMenu] = useState(false);
+  const [busy, setBusy] = useState(false);
   const user = s.byUsername(username);
   if (!user) return <p className="p-10 text-center text-muted-foreground">User not found</p>;
   const isMe = user.id === ME_ID;
@@ -73,6 +75,18 @@ function Profile() {
                 className="flex-1 rounded-xl bg-secondary py-2 text-sm font-semibold">Message</button>
             </>
           )}
+        </div>
+        {s.isAdmin && !isMe && (
+          <button disabled={busy} onClick={async () => {
+            setBusy(true);
+            try { await s.setVerified(user.id, !user.verified); toast.success(user.verified ? "Verification removed" : "User verified"); }
+            catch (e) { toast.error(e instanceof Error ? e.message : "Could not update verification"); }
+            finally { setBusy(false); }
+          }} className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-verified/40 py-2 text-sm font-semibold text-verified disabled:opacity-50">
+            <BadgeCheck className="size-4" />{user.verified ? "Remove verification (admin)" : "Grant verification (admin)"}
+          </button>
+        )}
+        <div className="hidden">
         </div>
       </section>
       {blocked ? <p className="p-10 text-center text-sm text-muted-foreground">You blocked this account.</p>
