@@ -48,7 +48,7 @@ export function FeedVideo({ src, className }: { src: string; className?: string 
     if (!el || !v) return;
     const io = new IntersectionObserver(
       ([e]) => {
-        if (e.isIntersecting && e.intersectionRatio >= 0.6) {
+        if (e?.isIntersecting && e.intersectionRatio >= 0.6) {
           v.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
         } else {
           v.pause();
