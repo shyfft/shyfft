@@ -33,6 +33,9 @@ type Store = {
   addComment: (postId: string, text: string) => Promise<void>;
   createPost: (p: { file: File; kind: "post" | "reel"; caption: string; location?: string | undefined }) => Promise<void>;
   createStory: (file: File) => Promise<void>;
+    deletePost: (postId: string) => Promise<void>;
+  editPost: (postId: string, caption: string) => Promise<void>;
+  deleteStory: (storyId: string) => Promise<void>;
   sendMessage: (userId: string, text: string, opts?: { file?: File; postId?: string }) => Promise<void>;
   openConversation: (userId: string) => string;
   markConversationRead: (userId: string) => void;
@@ -272,6 +275,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         await load(myId);
       },
       createStory: async (file) => {
+              deletePost: async (postId) => {
+        const { error } = await supabase.from("posts").delete().eq("id", postId).eq("user_id", myId);
+        if (error) { toast.error("Could not delete post"); throw error; }
+        setPosts((ps) => ps.filter((p) => p.id !== postId));
+        toast.success("Post deleted");
+      },
+      editPost: async (postId, caption) => {
+        const { error } = await supabase.from("posts").update({ caption }).eq("id", postId).eq("user_id", myId);
+        if (error) { toast.error("Could not update caption"); throw error; }
+        setPosts((ps) => ps.map((p) => (p.id === postId ? { ...p, caption } : p)));
+        toast.success("Post updated");
+      },
+      deleteStory: async (storyId) => {
+        const { error } = await supabase.from("stories").delete().eq("id", storyId).eq("user_id", myId);
+        if (error) { toast.error("Could not delete story"); throw error; }
+        setStories((ss) => ss.filter((s) => s.id !== storyId));
+        toast.success("Story deleted");
+      },
         const path = await uploadMedia(myId, file);
         const { error } = await supabase.from("stories").insert({ user_id: myId, media_url: path });
         if (error) throw error;
