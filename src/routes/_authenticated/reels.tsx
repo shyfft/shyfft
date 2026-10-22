@@ -51,7 +51,7 @@ function ReelItem({ reel: r }: { reel: Post }) {
     if (!el || !v) return;
     const io = new IntersectionObserver(
       ([e]) => {
-        const on = e.isIntersecting && e.intersectionRatio >= 0.6;
+        const on = !!e?.isIntersecting && e.intersectionRatio >= 0.6;
         if (on) { v.currentTime = 0; v.play().then(() => setPaused(false)).catch(() => setPaused(true)); }
         else { v.pause(); }
       },
