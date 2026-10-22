@@ -36,6 +36,13 @@
       "when": 1792595930060,
       "tag": "0004_admin_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792631932954,
+      "tag": "0005_messages_media_receipts",
+      "breakpoints": true
     }
   ]
 }

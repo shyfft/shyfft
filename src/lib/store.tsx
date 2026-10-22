@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { avatarFallback } from "./format";
-import type { Comment, Conversation, Message, Notification, Post, Story, User } from "./types";
+import type { Comment, Conversation, MediaType, Message, Notification, Post, Story, User } from "./types";
 
 type Tables = Database["public"]["Tables"];
 type Theme = "light" | "dark";
@@ -33,7 +33,7 @@ type Store = {
   addComment: (postId: string, text: string) => Promise<void>;
   createPost: (p: { file: File; kind: "post" | "reel"; caption: string; location?: string | undefined }) => Promise<void>;
   createStory: (file: File) => Promise<void>;
-  sendMessage: (userId: string, text: string) => Promise<void>;
+  sendMessage: (userId: string, text: string, opts?: { file?: File; postId?: string }) => Promise<void>;
   openConversation: (userId: string) => string;
   markConversationRead: (userId: string) => void;
   markNotificationsRead: () => void;
@@ -141,6 +141,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ...(profiles.data ?? []).map((p) => p.avatar_url ?? ""),
       ...postRows.map((p) => p.media_url),
       ...(storiesRes.data ?? []).map((s) => s.media_url),
+      ...(msgs.data ?? []).map((m) => m.media_url ?? ""),
     ]);
     const byPost = new Map<string, Comment[]>();
     (commentsRes.data ?? []).forEach((c) => {
@@ -159,7 +160,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSaved(new Set((saves.data ?? []).map((l) => l.post_id)));
     setFollowing(new Set((follows.data ?? []).map((f) => f.following_id)));
     setBlocked(new Set((blocks.data ?? []).map((b) => b.blocked_id)));
-    setMessages((msgs.data ?? []).map(toMessage));
+    setMessages((msgs.data ?? []).map((m) => toMessage(m, urls)));
+    const undelivered = (msgs.data ?? []).filter((m) => m.recipient_id === me && !m.delivered_at).map((m) => m.id);
+    if (undelivered.length) {
+      supabase.from("messages").update({ delivered_at: new Date().toISOString() }).in("id", undelivered).then();
+    }
     setNotifications((notifs.data ?? []).map(toNotification));
     const adminRes = await supabase.rpc("has_role", { _user_id: me, _role: "admin" });
     setIsAdmin(adminRes.data === true);
@@ -173,7 +178,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const channel = supabase
       .channel(`user-${uid}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `recipient_id=eq.${uid}` },
-        (p) => setMessages((m) => m.some((x) => x.id === (p.new as Tables["messages"]["Row"]).id) ? m : [...m, toMessage(p.new as Tables["messages"]["Row"])]))
+        async (p) => {
+          const row = p.new as Tables["messages"]["Row"];
+          const urls = isPath(row.media_url) ? await signPaths([row.media_url!]) : undefined;
+          setMessages((m) => m.some((x) => x.id === row.id) ? m : [...m, toMessage(row, urls)]);
+          // Confirm delivery so the sender sees the "delivered" receipt.
+          supabase.from("messages").update({ delivered_at: new Date().toISOString() }).eq("id", row.id).is("delivered_at", null).then();
+        })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages", filter: `sender_id=eq.${uid}` },
+        (p) => {
+          const row = p.new as Tables["messages"]["Row"];
+          setMessages((ms) => ms.map((m) => m.id === row.id
+            ? { ...m, read: !!row.read_at, deliveredAt: row.delivered_at ? ts(row.delivered_at) : m.deliveredAt }
+            : m));
+        })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${uid}` },
         (p) => setNotifications((n) => [toNotification(p.new as Tables["notifications"]["Row"]), ...n]))
       .subscribe();
@@ -259,10 +277,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (error) throw error;
         await load(myId);
       },
-      sendMessage: async (userId, text) => {
-        const { data, error } = await supabase.from("messages").insert({ sender_id: myId, recipient_id: userId, text }).select().single();
+      sendMessage: async (userId, text, opts) => {
+        let media_url: string | null = null;
+        let media_type: string | null = null;
+        if (opts?.file) {
+          if (opts.file.size > 50 * 1024 * 1024) { fail(new Error("File too large — max 50 MB")); return; }
+          if (!/^image\/|^video\//.test(opts.file.type)) { fail(new Error("Only photos and videos can be sent")); return; }
+          try {
+            media_url = await uploadMedia(myId, opts.file);
+          } catch (e) { fail(e); return; }
+          media_type = opts.file.type.startsWith("video") ? "video" : "image";
+        }
+        const { data, error } = await supabase.from("messages").insert({
+          sender_id: myId, recipient_id: userId, text, media_url, media_type, post_id: opts?.postId ?? null,
+        }).select().single();
         if (error) { fail(error); return; }
-        setMessages((m) => [...m, toMessage(data)]);
+        const urls = media_url ? await signPaths([media_url]) : undefined;
+        setMessages((m) => [...m, toMessage(data, urls)]);
       },
       openConversation: (userId) => userId,
       markConversationRead: (userId) => {
@@ -312,8 +343,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
-function toMessage(m: Tables["messages"]["Row"]): Message {
-  return { id: m.id, fromId: m.sender_id, toId: m.recipient_id, text: m.text, createdAt: ts(m.created_at), read: !!m.read_at };
+function toMessage(m: Tables["messages"]["Row"], urls?: Map<string, string>): Message {
+  const mediaPath = isPath(m.media_url) ? m.media_url : null;
+  return {
+    id: m.id, fromId: m.sender_id, toId: m.recipient_id, text: m.text, createdAt: ts(m.created_at),
+    read: !!m.read_at,
+    deliveredAt: m.delivered_at ? ts(m.delivered_at) : undefined,
+    media: m.media_url ? (mediaPath ? urls?.get(mediaPath) : m.media_url) : undefined,
+    mediaType: (m.media_type as MediaType | null) ?? undefined,
+    postId: m.post_id ?? undefined,
+  };
 }
 function toNotification(n: Tables["notifications"]["Row"]): Notification {
   return { id: n.id, type: n.type as Notification["type"], userId: n.actor_id, postId: n.post_id ?? undefined, text: n.text ?? undefined, createdAt: ts(n.created_at), read: n.read };
