@@ -21,8 +21,37 @@ export function PostMenu({ open, onClose, userId, postId }: { open: boolean; onC
         <div className="px-2">
           {report ? REASONS.map((r) => (
             <button key={r} className={row} onClick={() => { s.report(userId, r, postId).then(() => toast.success("Thanks — report submitted"), () => toast.error("Could not send report")); close(); }}>{r}</button>
-          )) : isMe ? (
-            <button className={row} onClick={close}>Cancel</button>
+          )          ) : isMe ? (
+            <>
+              {postId && (
+                <>
+                  <button
+                    className={row}
+                    onClick={() => {
+                      const newCaption = prompt("Enter new caption:");
+                      if (newCaption !== null) {
+                        s.editPost(postId, newCaption);
+                      }
+                      close();
+                    }}
+                  >
+                    Edit Caption
+                  </button>
+                  <button
+                    className={`${row} text-destructive`}
+                    onClick={() => {
+                      if (confirm("Delete this post?")) {
+                        s.deletePost(postId);
+                      }
+                      close();
+                    }}
+                  >
+                    Delete Post
+                  </button>
+                </>
+              )}
+              <button className={row} onClick={close}>Cancel</button>
+            </>
           ) : (
             <>
               <button className={row} onClick={() => { s.toggleFollow(userId); close(); }}>
