@@ -33,7 +33,7 @@ type Store = {
   addComment: (postId: string, text: string) => Promise<void>;
   createPost: (p: { file: File; kind: "post" | "reel"; caption: string; location?: string | undefined }) => Promise<void>;
   createStory: (file: File) => Promise<void>;
-    deletePost: (postId: string) => Promise<void>;
+  deletePost: (postId: string) => Promise<void>;
   editPost: (postId: string, caption: string) => Promise<void>;
   deleteStory: (storyId: string) => Promise<void>;
   sendMessage: (userId: string, text: string, opts?: { file?: File; postId?: string }) => Promise<void>;
@@ -66,8 +66,16 @@ async function signPaths(paths: string[]) {
 
 function toUser(p: Tables["profiles"]["Row"], urls: Map<string, string>): User {
   return {
-    id: p.id, username: p.username, name: p.name, bio: p.bio, verified: p.verified, isPrivate: p.is_private,
-    onboarded: p.onboarded, followers: p.followers_count, following: p.following_count, avatarPath: p.avatar_url,
+    id: p.id,
+    username: p.username,
+    name: p.name,
+    bio: p.bio,
+    verified: p.verified,
+    isPrivate: p.is_private,
+    onboarded: p.onboarded,
+    followers: p.followers_count,
+    following: p.following_count,
+    avatarPath: p.avatar_url,
     avatar: isPath(p.avatar_url) ? urls.get(p.avatar_url) ?? avatarFallback(p.username) : p.avatar_url ?? avatarFallback(p.username),
   };
 }
@@ -104,9 +112,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (t) setThemeState(t);
     else if (window.matchMedia("(prefers-color-scheme: dark)").matches) setThemeState("dark");
   }, []);
+
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
+
   const setTheme = useCallback((t: Theme) => {
     setThemeState(t);
     localStorage.setItem("shyfft-theme", t);
@@ -136,39 +146,59 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       supabase.from("messages").select("*").or(`sender_id.eq.${me},recipient_id.eq.${me}`).order("created_at").limit(1000),
       supabase.from("notifications").select("*").eq("user_id", me).order("created_at", { ascending: false }).limit(100),
     ]);
+
     const postRows = postsRes.data ?? [];
     const commentsRes = postRows.length
       ? await supabase.from("comments").select("*").in("post_id", postRows.map((p) => p.id)).order("created_at")
       : { data: [] as Tables["comments"]["Row"][] };
+
     const urls = await signPaths([
       ...(profiles.data ?? []).map((p) => p.avatar_url ?? ""),
       ...postRows.map((p) => p.media_url),
       ...(storiesRes.data ?? []).map((s) => s.media_url),
       ...(msgs.data ?? []).map((m) => m.media_url ?? ""),
     ]);
+
     const byPost = new Map<string, Comment[]>();
     (commentsRes.data ?? []).forEach((c) => {
       const list = byPost.get(c.post_id) ?? [];
       list.push({ id: c.id, userId: c.user_id, text: c.text, createdAt: ts(c.created_at) });
       byPost.set(c.post_id, list);
     });
+
     setUsers((profiles.data ?? []).map((p) => toUser(p, urls)));
     setPosts(postRows.map((p) => ({
-      id: p.id, userId: p.user_id, media: urls.get(p.media_url) ?? p.media_url, mediaType: p.media_type as Post["mediaType"],
-      kind: p.kind as Post["kind"], caption: p.caption, likes: p.like_count, commentCount: p.comment_count,
-      comments: byPost.get(p.id) ?? [], createdAt: ts(p.created_at), location: p.location ?? undefined,
+      id: p.id,
+      userId: p.user_id,
+      media: urls.get(p.media_url) ?? p.media_url,
+      mediaType: p.media_type as Post["mediaType"],
+      kind: p.kind as Post["kind"],
+      caption: p.caption,
+      likes: p.like_count,
+      commentCount: p.comment_count,
+      comments: byPost.get(p.id) ?? [],
+      createdAt: ts(p.created_at),
+      location: p.location ?? undefined,
     })));
-    setStories((storiesRes.data ?? []).map((s) => ({ id: s.id, userId: s.user_id, media: urls.get(s.media_url) ?? s.media_url, createdAt: ts(s.created_at) })));
+    setStories((storiesRes.data ?? []).map((s) => ({
+      id: s.id,
+      userId: s.user_id,
+      media: urls.get(s.media_url) ?? s.media_url,
+      createdAt: ts(s.created_at),
+    })));
     setLiked(new Set((likes.data ?? []).map((l) => l.post_id)));
     setSaved(new Set((saves.data ?? []).map((l) => l.post_id)));
     setFollowing(new Set((follows.data ?? []).map((f) => f.following_id)));
     setBlocked(new Set((blocks.data ?? []).map((b) => b.blocked_id)));
     setMessages((msgs.data ?? []).map((m) => toMessage(m, urls)));
+
     const undelivered = (msgs.data ?? []).filter((m) => m.recipient_id === me && !m.delivered_at).map((m) => m.id);
     if (undelivered.length) {
       supabase.from("messages").update({ delivered_at: new Date().toISOString() }).in("id", undelivered).then();
     }
+
     setNotifications((notifs.data ?? []).map(toNotification));
+
     const adminRes = await supabase.rpc("has_role", { _user_id: me, _role: "admin" });
     setIsAdmin(adminRes.data === true);
     setReady(true);
@@ -177,7 +207,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!uid) { setReady(false); return; }
     load(uid);
-    // Realtime: new direct messages and notifications
+
     const channel = supabase
       .channel(`user-${uid}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `recipient_id=eq.${uid}` },
@@ -185,7 +215,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const row = p.new as Tables["messages"]["Row"];
           const urls = isPath(row.media_url) ? await signPaths([row.media_url!]) : undefined;
           setMessages((m) => m.some((x) => x.id === row.id) ? m : [...m, toMessage(row, urls)]);
-          // Confirm delivery so the sender sees the "delivered" receipt.
           supabase.from("messages").update({ delivered_at: new Date().toISOString() }).eq("id", row.id).is("delivered_at", null).then();
         })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages", filter: `sender_id=eq.${uid}` },
@@ -198,6 +227,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${uid}` },
         (p) => setNotifications((n) => [toNotification(p.new as Tables["notifications"]["Row"]), ...n]))
       .subscribe();
+
     return () => { supabase.removeChannel(channel); };
   }, [uid, load]);
 
@@ -220,8 +250,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const value = useMemo<Store>(() => {
     const myId = uid ?? "";
     return {
-      ready: ready && !!me, authed: authChecked && !!uid,
-      me: me as User, users, conversations, notifications, liked, saved, following, blocked, theme,
+      ready: ready && !!me,
+      authed: authChecked && !!uid,
+      me: me as User,
+      users,
+      conversations,
+      notifications,
+      liked,
+      saved,
+      following,
+      blocked,
+      theme,
       privateAccount: !!me?.isPrivate,
       posts: posts.filter((p) => !blocked.has(p.userId)),
       stories: stories.filter((s) => !blocked.has(s.userId)),
@@ -275,7 +314,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         await load(myId);
       },
       createStory: async (file) => {
-              deletePost: async (postId) => {
+        const path = await uploadMedia(myId, file);
+        const { error } = await supabase.from("stories").insert({ user_id: myId, media_url: path });
+        if (error) throw error;
+        await load(myId);
+      },
+      deletePost: async (postId) => {
         const { error } = await supabase.from("posts").delete().eq("id", postId).eq("user_id", myId);
         if (error) { toast.error("Could not delete post"); throw error; }
         setPosts((ps) => ps.filter((p) => p.id !== postId));
@@ -292,11 +336,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (error) { toast.error("Could not delete story"); throw error; }
         setStories((ss) => ss.filter((s) => s.id !== storyId));
         toast.success("Story deleted");
-      },
-        const path = await uploadMedia(myId, file);
-        const { error } = await supabase.from("stories").insert({ user_id: myId, media_url: path });
-        if (error) throw error;
-        await load(myId);
       },
       sendMessage: async (userId, text, opts) => {
         let media_url: string | null = null;
@@ -367,7 +406,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 function toMessage(m: Tables["messages"]["Row"], urls?: Map<string, string>): Message {
   const mediaPath = isPath(m.media_url) ? m.media_url : null;
   return {
-    id: m.id, fromId: m.sender_id, toId: m.recipient_id, text: m.text, createdAt: ts(m.created_at),
+    id: m.id,
+    fromId: m.sender_id,
+    toId: m.recipient_id,
+    text: m.text,
+    createdAt: ts(m.created_at),
     read: !!m.read_at,
     deliveredAt: m.delivered_at ? ts(m.delivered_at) : undefined,
     media: m.media_url ? (mediaPath ? urls?.get(mediaPath) : m.media_url) : undefined,
@@ -375,8 +418,17 @@ function toMessage(m: Tables["messages"]["Row"], urls?: Map<string, string>): Me
     postId: m.post_id ?? undefined,
   };
 }
+
 function toNotification(n: Tables["notifications"]["Row"]): Notification {
-  return { id: n.id, type: n.type as Notification["type"], userId: n.actor_id, postId: n.post_id ?? undefined, text: n.text ?? undefined, createdAt: ts(n.created_at), read: n.read };
+  return {
+    id: n.id,
+    type: n.type as Notification["type"],
+    userId: n.actor_id,
+    postId: n.post_id ?? undefined,
+    text: n.text ?? undefined,
+    createdAt: ts(n.created_at),
+    read: n.read,
+  };
 }
 
 export function useStore() {
