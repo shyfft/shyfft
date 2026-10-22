@@ -7,6 +7,7 @@ import { useStore } from "@/lib/store";
 import type { Post } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "./Avatar";
+import { FeedVideo } from "./FeedVideo";
 import { PostMenu } from "./PostMenu";
 import { VerifiedBadge } from "@/components/shyfft/VerifiedBadge";
 
@@ -38,7 +39,7 @@ export function PostCard({ post }: { post: Post }) {
       </div>
       <div className="relative bg-muted" onDoubleClick={dbl}>
         {post.mediaType === "video"
-          ? <video src={post.media} className="aspect-square w-full object-cover" controls playsInline />
+          ? <FeedVideo src={post.media} />
           : <img src={post.media} alt={post.caption} loading="lazy" className="aspect-square w-full object-cover" />}
         {burst > 0 && (
           <Heart key={burst} className="animate-pop pointer-events-none absolute inset-0 m-auto size-24 fill-overlay-foreground text-overlay-foreground drop-shadow-lg" />
