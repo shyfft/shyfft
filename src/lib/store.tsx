@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { avatarFallback } from "./format";
-import type { Comment, Conversation, Message, Notification, Post, Story, User } from "./types";
+import type { Comment, Conversation, MediaType, Message, Notification, Post, Story, User } from "./types";
 
 type Tables = Database["public"]["Tables"];
 type Theme = "light" | "dark";
@@ -33,7 +33,7 @@ type Store = {
   addComment: (postId: string, text: string) => Promise<void>;
   createPost: (p: { file: File; kind: "post" | "reel"; caption: string; location?: string | undefined }) => Promise<void>;
   createStory: (file: File) => Promise<void>;
-  sendMessage: (userId: string, text: string) => Promise<void>;
+  sendMessage: (userId: string, text: string, opts?: { file?: File; postId?: string }) => Promise<void>;
   openConversation: (userId: string) => string;
   markConversationRead: (userId: string) => void;
   markNotificationsRead: () => void;

@@ -33,7 +33,18 @@ export type Post = {
 
 export type Story = { id: string; userId: string; media: string; createdAt: number };
 
-export type Message = { id: string; fromId: string; toId: string; text: string; createdAt: number; read: boolean };
+export type Message = {
+  id: string;
+  fromId: string;
+  toId: string;
+  text: string;
+  createdAt: number;
+  read: boolean;
+  deliveredAt?: number | undefined;
+  media?: string | undefined;
+  mediaType?: MediaType | undefined;
+  postId?: string | undefined;
+};
 /** Conversation id is the other participant's user id. */
 export type Conversation = { id: string; userId: string; messages: Message[]; unread: number };
 
