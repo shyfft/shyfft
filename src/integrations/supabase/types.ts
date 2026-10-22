@@ -155,7 +155,11 @@ export type Database = {
       messages: {
         Row: {
           created_at: string
+          delivered_at: string | null
           id: string
+          media_type: string | null
+          media_url: string | null
+          post_id: string | null
           read_at: string | null
           recipient_id: string
           sender_id: string
@@ -163,7 +167,11 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          delivered_at?: string | null
           id?: string
+          media_type?: string | null
+          media_url?: string | null
+          post_id?: string | null
           read_at?: string | null
           recipient_id: string
           sender_id: string
@@ -171,13 +179,24 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          delivered_at?: string | null
           id?: string
+          media_type?: string | null
+          media_url?: string | null
+          post_id?: string | null
           read_at?: string | null
           recipient_id?: string
           sender_id?: string
           text?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "messages_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "messages_recipient_id_fkey"
             columns: ["recipient_id"]
