@@ -10,7 +10,7 @@ const HIDE_NAV = ["/stories/", "/messages/", "/onboarding", "/auth", "/reset-pas
 export function AppShell({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const { me, ready } = useStore();
-  const hide = !ready || HIDE_NAV.some((p) => pathname.startsWith(p));
+  const hide = !ready || !me || HIDE_NAV.some((p) => pathname.startsWith(p));
   const item = (to: "/" | "/explore" | "/reels", active: boolean, icon: ReactNode, label: string) => (
     <Link to={to} aria-label={label} aria-current={active ? "page" : undefined}
       className={cn("flex flex-1 items-center justify-center py-2 transition-transform active:scale-90", active ? "text-primary-foreground" : "text-muted-foreground")}>
@@ -19,7 +19,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </span>
     </Link>
   );
-  const profileActive = pathname.startsWith("/u/" + me.username);
+  const profileActive = Boolean(me?.username && pathname.startsWith("/u/" + me.username));
   return (
     <div className="mx-auto min-h-screen max-w-lg bg-background sm:border-x">
       <main className={cn(!hide && "pb-24")}>
@@ -36,12 +36,14 @@ export function AppShell({ children }: { children: ReactNode }) {
               </span>
             </Link>
             {item("/reels", pathname === "/reels", <Film className="size-6" strokeWidth={pathname === "/reels" ? 2.6 : 2} />, "Reels")}
-            <Link to="/u/$username" params={{ username: me.username }} aria-label="Profile" aria-current={profileActive ? "page" : undefined}
-              className="flex flex-1 items-center justify-center py-2 transition-transform active:scale-90">
-              <span className={cn("flex size-11 items-center justify-center rounded-2xl transition-all duration-200", profileActive && "scale-105 bg-brand shadow-glow")}>
-                <UserAvatar user={me} size={26} className="rounded-full" />
-              </span>
-            </Link>
+            {me?.username ? (
+              <Link to="/u/$username" params={{ username: me.username }} aria-label="Profile" aria-current={profileActive ? "page" : undefined}
+                className="flex flex-1 items-center justify-center py-2 transition-transform active:scale-90">
+                <span className={cn("flex size-11 items-center justify-center rounded-2xl transition-all duration-200", profileActive && "scale-105 bg-brand shadow-glow")}>
+                  <UserAvatar user={me} size={26} className="rounded-full" />
+                </span>
+              </Link>
+            ) : null}
           </div>
         </nav>
       )}
