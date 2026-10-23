@@ -80,11 +80,36 @@ function toUser(p: Tables["profiles"]["Row"], urls: Map<string, string>): User {
   };
 }
 
-async function uploadMedia(uid: string, file: File) {
+export const MAX_FILE_SIZE = 250 * 1024 * 1024; // 250 MB — matches the media bucket limit
+
+// XHR-based upload so large files report real progress and never block the UI thread.
+async function uploadMedia(uid: string, file: File, onProgress?: (pct: number) => void) {
   const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
   const path = `${uid}/${crypto.randomUUID()}.${ext}`;
-  const { error } = await supabase.storage.from("media").upload(path, file, { contentType: file.type });
-  if (error) throw error;
+  const { data: { session } } = await supabase.auth.getSession();
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/media/${path}`;
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.setRequestHeader("Authorization", `Bearer ${session?.access_token ?? ""}`);
+    xhr.setRequestHeader("apikey", import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY);
+    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+    xhr.setRequestHeader("x-upsert", "false");
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else {
+        let msg = `Upload failed (${xhr.status})`;
+        try { msg = JSON.parse(xhr.responseText)?.message ?? msg; } catch { /* keep default */ }
+        reject(new Error(msg));
+      }
+    };
+    xhr.onerror = () => reject(new Error("Network error during upload — check your connection and try again"));
+    xhr.ontimeout = () => reject(new Error("Upload timed out — try again on a better connection"));
+    xhr.send(file);
+  });
   return path;
 }
 
@@ -202,6 +227,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const adminRes = await supabase.rpc("has_role", { _user_id: me, _role: "admin" });
     setIsAdmin(adminRes.data === true);
     setReady(true);
+  }, []);
+
+  // Silent background resync of just the messages — merges by id so nothing
+  // duplicates, disappears, or resets scroll position. Used after realtime
+  // (re)connects and when the network comes back.
+  const syncMessages = useCallback(async (meId: string) => {
+    try {
+      const { data, error } = await supabase.from("messages").select("*")
+        .or(`sender_id.eq.${meId},recipient_id.eq.${meId}`).order("created_at").limit(1000);
+      if (error || !data) return;
+      const urls = await signPaths(data.map((m) => m.media_url ?? ""));
+      const incoming = data.map((m) => toMessage(m, urls));
+      setMessages((prev) => {
+        const byId = new Map(prev.map((m) => [m.id, m]));
+        incoming.forEach((m) => byId.set(m.id, m));
+        return [...byId.values()].sort((a, b) => a.createdAt - b.createdAt);
+      });
+      const undelivered = data.filter((m) => m.recipient_id === meId && !m.delivered_at).map((m) => m.id);
+      if (undelivered.length) {
+        supabase.from("messages").update({ delivered_at: new Date().toISOString() }).in("id", undelivered).then();
+      }
+    } catch { /* background resync must never surface errors */ }
   }, []);
 
   useEffect(() => {
