@@ -306,9 +306,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .map(([userId, ms]) => ({ id: userId, userId, messages: ms, unread: ms.filter((m) => m.toId === uid && !m.read).length }))
       .sort((a, b) => (b.messages.at(-1)?.createdAt ?? 0) - (a.messages.at(-1)?.createdAt ?? 0));
   }, [messages, uid]);
-
-  const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : "Something went wrong");
-
+  const fail = (e: any) => {
+  const msg = e?.message || e?.error_description || (typeof e === "string" ? e : "Something went wrong");
+  toast.error(msg);
+};
   const value = useMemo<Store>(() => {
     const myId = uid ?? "";
     return {
