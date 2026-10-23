@@ -87,12 +87,12 @@ async function uploadMedia(uid: string, file: File, onProgress?: (pct: number) =
   const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
   const path = `${uid}/${crypto.randomUUID()}.${ext}`;
   const { data: { session } } = await supabase.auth.getSession();
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/media/${path}`;
+  const url = `${import.meta.env["VITE_SUPABASE_URL"]}/storage/v1/object/media/${path}`;
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url);
     xhr.setRequestHeader("Authorization", `Bearer ${session?.access_token ?? ""}`);
-    xhr.setRequestHeader("apikey", import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY);
+    xhr.setRequestHeader("apikey", import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"]);
     xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
     xhr.setRequestHeader("x-upsert", "false");
     xhr.upload.onprogress = (e) => {

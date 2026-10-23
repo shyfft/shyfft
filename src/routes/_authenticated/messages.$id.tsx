@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Check, CheckCheck, ChevronLeft, Film, ImagePlus, Loader2, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { UserAvatar } from "@/components/shyfft/Avatar";
 import { MAX_FILE_SIZE, useStore } from "@/lib/store";
 import type { Message } from "@/lib/types";
