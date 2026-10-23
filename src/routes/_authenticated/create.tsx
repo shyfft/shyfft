@@ -3,7 +3,7 @@ import { ImagePlus, MapPin, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { TopBar } from "@/components/shyfft/AppShell";
-import { useStore } from "@/lib/store";
+import { MAX_FILE_SIZE, useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 type Tab = "post" | "reel" | "story";
@@ -27,6 +27,7 @@ function Create() {
   const [tab, setTab] = useState<Tab>(initial ?? "post");
   const [file, setFile] = useState<{ url: string; type: "image" | "video"; raw: File } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
   const [caption, setCaption] = useState("");
   const [loc, setLoc] = useState("");
   const input = useRef<HTMLInputElement>(null);
@@ -35,7 +36,7 @@ function Create() {
 
   const pick = (f?: File) => {
     if (!f) return;
-    if (f.size > 50 * 1024 * 1024) { toast.error("Max file size is 50 MB"); return; }
+    if (f.size > MAX_FILE_SIZE) { toast.error("Max file size is 250 MB"); return; }
     setFile({ url: URL.createObjectURL(f), type: f.type.startsWith("video") ? "video" : "image", raw: f });
   };
 
@@ -43,13 +44,14 @@ function Create() {
     if (!file) { toast.error("Pick a photo or video first"); return; }
     if (busy) return;
     setBusy(true);
+    setProgress(0);
     try {
       if (tab === "story") {
-        await s.createStory(file.raw);
+        await s.createStory(file.raw, setProgress);
         toast.success("Story shared for 24 hours");
         nav({ to: "/" });
       } else {
-        await s.createPost({ file: file.raw, kind: tab, caption, location: loc || undefined });
+        await s.createPost({ file: file.raw, kind: tab, caption, location: loc || undefined, onProgress: setProgress });
         toast.success(tab === "reel" ? "Reel shared" : "Post shared");
         nav({ to: tab === "reel" ? "/reels" : "/" });
       }
@@ -57,12 +59,18 @@ function Create() {
       toast.error(e instanceof Error ? e.message : "Upload failed");
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   };
 
   return (
     <>
-      <TopBar title="New" right={<button onClick={share} disabled={busy} className="text-sm font-bold text-primary disabled:opacity-50">{busy ? "Sharing…" : "Share"}</button>} />
+      <TopBar title="New" right={<button onClick={share} disabled={busy} className="text-sm font-bold text-primary disabled:opacity-50">{busy ? (progress !== null ? `Uploading ${progress}%` : "Sharing…") : "Share"}</button>} />
+      {busy && progress !== null && (
+        <div className="h-1 w-full bg-muted">
+          <div className="h-full bg-brand transition-all duration-300" style={{ width: `${progress}%` }} />
+        </div>
+      )}
       <div className="flex gap-2 p-3">
         {(["post", "reel", "story"] as Tab[]).map((t) => (
           <button key={t} onClick={() => setTab(t)}
