@@ -407,7 +407,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setStories((ss) => ss.filter((s) => s.id !== storyId));
         toast.success("Story deleted");
       },
-      sendMessage: async (userId, text, opts) => {
+            sendMessage: async (userId, text, opts) => {
         let media_url: string | null = null;
         let media_type: string | null = null;
         if (opts?.file) {
@@ -418,9 +418,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           } catch (e) { fail(e); return; }
           media_type = opts.file.type.startsWith("video") ? "video" : "image";
         }
+
+        // Database me text empty hone par aane wale constraint error ka permanent fix
+        const trimmed = text.trim();
+        const safeText = trimmed.length > 0 
+          ? trimmed 
+          : (opts?.file ? (opts.file.type.startsWith("video") ? "🎥 Video" : "📷 Photo") : (opts?.postId ? "🎬 Reel" : " "));
+
         const { data, error } = await supabase.from("messages").insert({
-          sender_id: myId, recipient_id: userId, text, media_url, media_type, post_id: opts?.postId ?? null,
+          sender_id: myId,
+          recipient_id: userId,
+          text: safeText,
+          media_url,
+          media_type,
+          post_id: opts?.postId ?? null,
         }).select().single();
+
         if (error) { fail(error); return; }
         const urls = media_url ? await signPaths([media_url]) : undefined;
         setMessages((m) => [...m, toMessage(data, urls)]);
