@@ -31,12 +31,12 @@ type Store = {
   toggleBlock: (userId: string) => void;
   report: (userId: string, reason: string, postId?: string) => Promise<void>;
   addComment: (postId: string, text: string) => Promise<void>;
-  createPost: (p: { file: File; kind: "post" | "reel"; caption: string; location?: string | undefined }) => Promise<void>;
-  createStory: (file: File) => Promise<void>;
+  createPost: (p: { file: File; kind: "post" | "reel"; caption: string; location?: string | undefined; onProgress?: (pct: number) => void }) => Promise<void>;
+  createStory: (file: File, onProgress?: (pct: number) => void) => Promise<void>;
   deletePost: (postId: string) => Promise<void>;
   editPost: (postId: string, caption: string) => Promise<void>;
   deleteStory: (storyId: string) => Promise<void>;
-  sendMessage: (userId: string, text: string, opts?: { file?: File; postId?: string }) => Promise<void>;
+  sendMessage: (userId: string, text: string, opts?: { file?: File; postId?: string; onProgress?: (pct: number) => void }) => Promise<void>;
   openConversation: (userId: string) => string;
   markConversationRead: (userId: string) => void;
   markNotificationsRead: () => void;
@@ -348,7 +348,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           u.id === id ? { ...u, followers: u.followers + (was ? -1 : 1) } :
           u.id === myId ? { ...u, following: u.following + (was ? -1 : 1) } : u));
         (was ? supabase.from("follows").delete().match({ follower_id: myId, following_id: id }) : supabase.from("follows").insert({ follower_id: myId, following_id: id }))
-          .then(({ error }) => { if (error) fail(error); else if (uidRef.current) load(uidRef.current); });
+          .then(({ error }) => error && fail(error));
       },
       toggleBlock: (id) => {
         const was = blocked.has(id);
@@ -367,19 +367,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setPosts((ps) => ps.map((p) => p.id === postId
           ? { ...p, commentCount: p.commentCount + 1, comments: [...p.comments, { id: data.id, userId: myId, text, createdAt: ts(data.created_at) }] } : p));
       },
-      createPost: async ({ file, kind, caption, location }) => {
-        const path = await uploadMedia(myId, file);
-        const { error } = await supabase.from("posts").insert({
+      createPost: async ({ file, kind, caption, location, onProgress }) => {
+        const path = await uploadMedia(myId, file, onProgress);
+        const { data, error } = await supabase.from("posts").insert({
           user_id: myId, media_url: path, media_type: file.type.startsWith("video") ? "video" : "image", kind, caption, location: location ?? null,
-        });
+        }).select().single();
         if (error) throw error;
-        await load(myId);
+        // Insert locally instead of reloading everything — no feed flicker or scroll reset.
+        const localUrl = URL.createObjectURL(file);
+        setPosts((ps) => [{
+          id: data.id, userId: myId, media: localUrl,
+          mediaType: data.media_type as Post["mediaType"], kind: data.kind as Post["kind"],
+          caption: data.caption, likes: 0, commentCount: 0, comments: [],
+          createdAt: ts(data.created_at), location: data.location ?? undefined,
+        }, ...ps]);
       },
-      createStory: async (file) => {
-        const path = await uploadMedia(myId, file);
-        const { error } = await supabase.from("stories").insert({ user_id: myId, media_url: path });
+      createStory: async (file, onProgress) => {
+        const path = await uploadMedia(myId, file, onProgress);
+        const { data, error } = await supabase.from("stories").insert({ user_id: myId, media_url: path }).select().single();
         if (error) throw error;
-        await load(myId);
+        setStories((ss) => [{ id: data.id, userId: myId, media: URL.createObjectURL(file), createdAt: ts(data.created_at) }, ...ss]);
       },
       deletePost: async (postId) => {
         const { error } = await supabase.from("posts").delete().eq("id", postId).eq("user_id", myId);
@@ -403,10 +410,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         let media_url: string | null = null;
         let media_type: string | null = null;
         if (opts?.file) {
-          if (opts.file.size > 50 * 1024 * 1024) { fail(new Error("File too large — max 50 MB")); return; }
+          if (opts.file.size > MAX_FILE_SIZE) { fail(new Error("File too large — max 250 MB")); return; }
           if (!/^image\/|^video\//.test(opts.file.type)) { fail(new Error("Only photos and videos can be sent")); return; }
           try {
-            media_url = await uploadMedia(myId, opts.file);
+            media_url = await uploadMedia(myId, opts.file, opts.onProgress);
           } catch (e) { fail(e); return; }
           media_type = opts.file.type.startsWith("video") ? "video" : "image";
         }
