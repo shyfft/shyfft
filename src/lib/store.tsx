@@ -259,10 +259,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .channel(`user-${uid}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `recipient_id=eq.${uid}` },
         async (p) => {
-          const row = p.new as Tables["messages"]["Row"];
-          const urls = isPath(row.media_url) ? await signPaths([row.media_url!]) : undefined;
-          setMessages((m) => m.some((x) => x.id === row.id) ? m : [...m, toMessage(row, urls)]);
-          supabase.from("messages").update({ delivered_at: new Date().toISOString() }).eq("id", row.id).is("delivered_at", null).then();
+          try {
+            const row = p.new as Tables["messages"]["Row"];
+            let urls: Map<string, string> | undefined;
+            try {
+              urls = isPath(row.media_url) ? await signPaths([row.media_url!]) : undefined;
+            } catch { /* media URL can be re-signed later; still show the message */ }
+            setMessages((m) => m.some((x) => x.id === row.id) ? m : [...m, toMessage(row, urls)]);
+            supabase.from("messages").update({ delivered_at: new Date().toISOString() }).eq("id", row.id).is("delivered_at", null).then();
+          } catch { /* a realtime event must never crash the app */ }
         })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages", filter: `sender_id=eq.${uid}` },
         (p) => {
@@ -273,10 +278,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${uid}` },
         (p) => setNotifications((n) => [toNotification(p.new as Tables["notifications"]["Row"]), ...n]))
-      .subscribe();
+      .subscribe((status) => {
+        // After every (re)join — including automatic reconnects — quietly catch
+        // up on anything missed while the socket was down. No reload, no toast.
+        if (status === "SUBSCRIBED") syncMessages(uid);
+      });
 
-    return () => { supabase.removeChannel(channel); };
-  }, [uid, load]);
+    const onOnline = () => syncMessages(uid);
+    window.addEventListener("online", onOnline);
+
+    return () => {
+      window.removeEventListener("online", onOnline);
+      supabase.removeChannel(channel);
+    };
+  }, [uid, load, syncMessages]);
 
   const me = users.find((u) => u.id === uid);
 
