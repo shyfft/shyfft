@@ -31,12 +31,12 @@ type Store = {
   toggleBlock: (userId: string) => void;
   report: (userId: string, reason: string, postId?: string) => Promise<void>;
   addComment: (postId: string, text: string) => Promise<void>;
-  createPost: (p: { file: File; kind: "post" | "reel"; caption: string; location?: string | undefined }) => Promise<void>;
-  createStory: (file: File) => Promise<void>;
+  createPost: (p: { file: File; kind: "post" | "reel"; caption: string; location?: string | undefined; onProgress?: (pct: number) => void }) => Promise<void>;
+  createStory: (file: File, onProgress?: (pct: number) => void) => Promise<void>;
   deletePost: (postId: string) => Promise<void>;
   editPost: (postId: string, caption: string) => Promise<void>;
   deleteStory: (storyId: string) => Promise<void>;
-  sendMessage: (userId: string, text: string, opts?: { file?: File; postId?: string }) => Promise<void>;
+  sendMessage: (userId: string, text: string, opts?: { file?: File; postId?: string; onProgress?: (pct: number) => void }) => Promise<void>;
   openConversation: (userId: string) => string;
   markConversationRead: (userId: string) => void;
   markNotificationsRead: () => void;
@@ -80,11 +80,36 @@ function toUser(p: Tables["profiles"]["Row"], urls: Map<string, string>): User {
   };
 }
 
-async function uploadMedia(uid: string, file: File) {
+export const MAX_FILE_SIZE = 250 * 1024 * 1024; // 250 MB — matches the media bucket limit
+
+// XHR-based upload so large files report real progress and never block the UI thread.
+async function uploadMedia(uid: string, file: File, onProgress?: (pct: number) => void) {
   const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
   const path = `${uid}/${crypto.randomUUID()}.${ext}`;
-  const { error } = await supabase.storage.from("media").upload(path, file, { contentType: file.type });
-  if (error) throw error;
+  const { data: { session } } = await supabase.auth.getSession();
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/media/${path}`;
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.setRequestHeader("Authorization", `Bearer ${session?.access_token ?? ""}`);
+    xhr.setRequestHeader("apikey", import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY);
+    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+    xhr.setRequestHeader("x-upsert", "false");
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else {
+        let msg = `Upload failed (${xhr.status})`;
+        try { msg = JSON.parse(xhr.responseText)?.message ?? msg; } catch { /* keep default */ }
+        reject(new Error(msg));
+      }
+    };
+    xhr.onerror = () => reject(new Error("Network error during upload — check your connection and try again"));
+    xhr.ontimeout = () => reject(new Error("Upload timed out — try again on a better connection"));
+    xhr.send(file);
+  });
   return path;
 }
 
@@ -204,6 +229,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setReady(true);
   }, []);
 
+  // Silent background resync of just the messages — merges by id so nothing
+  // duplicates, disappears, or resets scroll position. Used after realtime
+  // (re)connects and when the network comes back.
+  const syncMessages = useCallback(async (meId: string) => {
+    try {
+      const { data, error } = await supabase.from("messages").select("*")
+        .or(`sender_id.eq.${meId},recipient_id.eq.${meId}`).order("created_at").limit(1000);
+      if (error || !data) return;
+      const urls = await signPaths(data.map((m) => m.media_url ?? ""));
+      const incoming = data.map((m) => toMessage(m, urls));
+      setMessages((prev) => {
+        const byId = new Map(prev.map((m) => [m.id, m]));
+        incoming.forEach((m) => byId.set(m.id, m));
+        return [...byId.values()].sort((a, b) => a.createdAt - b.createdAt);
+      });
+      const undelivered = data.filter((m) => m.recipient_id === meId && !m.delivered_at).map((m) => m.id);
+      if (undelivered.length) {
+        supabase.from("messages").update({ delivered_at: new Date().toISOString() }).in("id", undelivered).then();
+      }
+    } catch { /* background resync must never surface errors */ }
+  }, []);
+
   useEffect(() => {
     if (!uid) { setReady(false); return; }
     load(uid);
@@ -212,10 +259,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .channel(`user-${uid}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `recipient_id=eq.${uid}` },
         async (p) => {
-          const row = p.new as Tables["messages"]["Row"];
-          const urls = isPath(row.media_url) ? await signPaths([row.media_url!]) : undefined;
-          setMessages((m) => m.some((x) => x.id === row.id) ? m : [...m, toMessage(row, urls)]);
-          supabase.from("messages").update({ delivered_at: new Date().toISOString() }).eq("id", row.id).is("delivered_at", null).then();
+          try {
+            const row = p.new as Tables["messages"]["Row"];
+            let urls: Map<string, string> | undefined;
+            try {
+              urls = isPath(row.media_url) ? await signPaths([row.media_url!]) : undefined;
+            } catch { /* media URL can be re-signed later; still show the message */ }
+            setMessages((m) => m.some((x) => x.id === row.id) ? m : [...m, toMessage(row, urls)]);
+            supabase.from("messages").update({ delivered_at: new Date().toISOString() }).eq("id", row.id).is("delivered_at", null).then();
+          } catch { /* a realtime event must never crash the app */ }
         })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages", filter: `sender_id=eq.${uid}` },
         (p) => {
@@ -226,10 +278,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${uid}` },
         (p) => setNotifications((n) => [toNotification(p.new as Tables["notifications"]["Row"]), ...n]))
-      .subscribe();
+      .subscribe((status) => {
+        // After every (re)join — including automatic reconnects — quietly catch
+        // up on anything missed while the socket was down. No reload, no toast.
+        if (status === "SUBSCRIBED") syncMessages(uid);
+      });
 
-    return () => { supabase.removeChannel(channel); };
-  }, [uid, load]);
+    const onOnline = () => syncMessages(uid);
+    window.addEventListener("online", onOnline);
+
+    return () => {
+      window.removeEventListener("online", onOnline);
+      supabase.removeChannel(channel);
+    };
+  }, [uid, load, syncMessages]);
 
   const me = users.find((u) => u.id === uid);
 
@@ -286,7 +348,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           u.id === id ? { ...u, followers: u.followers + (was ? -1 : 1) } :
           u.id === myId ? { ...u, following: u.following + (was ? -1 : 1) } : u));
         (was ? supabase.from("follows").delete().match({ follower_id: myId, following_id: id }) : supabase.from("follows").insert({ follower_id: myId, following_id: id }))
-          .then(({ error }) => { if (error) fail(error); else if (uidRef.current) load(uidRef.current); });
+          .then(({ error }) => error && fail(error));
       },
       toggleBlock: (id) => {
         const was = blocked.has(id);
@@ -305,19 +367,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setPosts((ps) => ps.map((p) => p.id === postId
           ? { ...p, commentCount: p.commentCount + 1, comments: [...p.comments, { id: data.id, userId: myId, text, createdAt: ts(data.created_at) }] } : p));
       },
-      createPost: async ({ file, kind, caption, location }) => {
-        const path = await uploadMedia(myId, file);
-        const { error } = await supabase.from("posts").insert({
+      createPost: async ({ file, kind, caption, location, onProgress }) => {
+        const path = await uploadMedia(myId, file, onProgress);
+        const { data, error } = await supabase.from("posts").insert({
           user_id: myId, media_url: path, media_type: file.type.startsWith("video") ? "video" : "image", kind, caption, location: location ?? null,
-        });
+        }).select().single();
         if (error) throw error;
-        await load(myId);
+        // Insert locally instead of reloading everything — no feed flicker or scroll reset.
+        const localUrl = URL.createObjectURL(file);
+        setPosts((ps) => [{
+          id: data.id, userId: myId, media: localUrl,
+          mediaType: data.media_type as Post["mediaType"], kind: data.kind as Post["kind"],
+          caption: data.caption, likes: 0, commentCount: 0, comments: [],
+          createdAt: ts(data.created_at), location: data.location ?? undefined,
+        }, ...ps]);
       },
-      createStory: async (file) => {
-        const path = await uploadMedia(myId, file);
-        const { error } = await supabase.from("stories").insert({ user_id: myId, media_url: path });
+      createStory: async (file, onProgress) => {
+        const path = await uploadMedia(myId, file, onProgress);
+        const { data, error } = await supabase.from("stories").insert({ user_id: myId, media_url: path }).select().single();
         if (error) throw error;
-        await load(myId);
+        setStories((ss) => [{ id: data.id, userId: myId, media: URL.createObjectURL(file), createdAt: ts(data.created_at) }, ...ss]);
       },
       deletePost: async (postId) => {
         const { error } = await supabase.from("posts").delete().eq("id", postId).eq("user_id", myId);
@@ -341,10 +410,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         let media_url: string | null = null;
         let media_type: string | null = null;
         if (opts?.file) {
-          if (opts.file.size > 50 * 1024 * 1024) { fail(new Error("File too large — max 50 MB")); return; }
+          if (opts.file.size > MAX_FILE_SIZE) { fail(new Error("File too large — max 250 MB")); return; }
           if (!/^image\/|^video\//.test(opts.file.type)) { fail(new Error("Only photos and videos can be sent")); return; }
           try {
-            media_url = await uploadMedia(myId, opts.file);
+            media_url = await uploadMedia(myId, opts.file, opts.onProgress);
           } catch (e) { fail(e); return; }
           media_type = opts.file.type.startsWith("video") ? "video" : "image";
         }
