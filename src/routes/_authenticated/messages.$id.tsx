@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Check, CheckCheck, ChevronLeft, Film, ImagePlus, Loader2, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { UserAvatar } from "@/components/shyfft/Avatar";
-import { useStore } from "@/lib/store";
+import { MAX_FILE_SIZE, useStore } from "@/lib/store";
 import type { Message } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { VerifiedBadge } from "@/components/shyfft/VerifiedBadge";
@@ -29,6 +29,7 @@ function Chat() {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => end.current?.scrollIntoView({ behavior: "smooth" }), [conv.messages.length]);
@@ -38,8 +39,8 @@ function Chat() {
 
   const pickFile = (f: File | null) => {
     if (!f) return;
-    if (!/^image\/|^video\//.test(f.type)) { setFile(null); return; }
-    if (f.size > 50 * 1024 * 1024) { setFile(null); return; }
+    if (!/^image\/|^video\//.test(f.type)) { setFile(null); toast.error("Only photos and videos can be sent"); return; }
+    if (f.size > MAX_FILE_SIZE) { setFile(null); toast.error("Max file size is 250 MB"); return; }
     if (preview) URL.revokeObjectURL(preview);
     setFile(f);
     setPreview(URL.createObjectURL(f));
@@ -55,12 +56,14 @@ function Chat() {
     e.preventDefault();
     if (sending || (!text.trim() && !file)) return;
     setSending(true);
+    setProgress(file ? 0 : null);
     try {
-      await s.sendMessage(id, text.trim(), file ? { file } : undefined);
+      await s.sendMessage(id, text.trim(), file ? { file, onProgress: setProgress } : undefined);
       setText("");
       cancelFile();
     } finally {
       setSending(false);
+      setProgress(null);
     }
   };
 
@@ -90,7 +93,16 @@ function Chat() {
               <X className="size-3.5" />
             </button>
           </div>
-          <p className="text-xs text-muted-foreground">{file.type.startsWith("video") ? "Video" : "Photo"} ready to send · {(file.size / 1024 / 1024).toFixed(1)} MB</p>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs text-muted-foreground">
+              {progress !== null ? `Uploading… ${progress}%` : `${file.type.startsWith("video") ? "Video" : "Photo"} ready to send · ${(file.size / 1024 / 1024).toFixed(1)} MB`}
+            </p>
+            {progress !== null && (
+              <div className="mt-1 h-1 w-full rounded-full bg-muted">
+                <div className="h-full rounded-full bg-brand transition-all duration-300" style={{ width: `${progress}%` }} />
+              </div>
+            )}
+          </div>
         </div>
       )}
       <form onSubmit={send} className="flex items-center gap-2 border-t p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
