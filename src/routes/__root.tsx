@@ -70,7 +70,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { title: "shyfft" },
       { name: "description", content: "shyfft — share photos, reels and stories with your people." },
-      { name: "google-site-verification", content: "HQPgAowHnPVnzuMAXDCy1UqOsHIegXQTF1fy0okJslI" },
+      { name: "google-site-verification", content: "ZB51vtT1aiCY1Iz4SBUHv49eHmSXdpX8oZoAZXloK-Y" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
