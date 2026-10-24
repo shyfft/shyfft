@@ -15,6 +15,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { StoreProvider } from "@/lib/store";
 import { AppShell } from "@/components/shyfft/AppShell";
 import { Toaster } from "@/components/ui/sonner";
+import { NavProgress, PageFade } from "@/components/shyfft/NavProgress";
 
 function NotFoundComponent() {
   return (
@@ -108,8 +109,9 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <StoreProvider>
+        <NavProgress />
         <AppShell>
-          <Outlet />
+          <PageFade><Outlet /></PageFade>
         </AppShell>
         <Toaster position="top-center" />
       </StoreProvider>

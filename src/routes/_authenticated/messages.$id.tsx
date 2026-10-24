@@ -23,7 +23,7 @@ export const Route = createFileRoute("/_authenticated/messages/$id")({
 function Chat() {
   const { id } = Route.useParams();
   const s = useStore();
-  const ME_ID = s.me.id;
+  const ME_ID = s.me?.id ?? "";
   const conv = s.conversations.find((c) => c.id === id) ?? { id, userId: id, messages: [], unread: 0 };
   const user = s.getUser(id);
   const [text, setText] = useState("");

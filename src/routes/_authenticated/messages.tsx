@@ -28,10 +28,10 @@ function Inbox() {
   const s = useStore();
   const router = useRouter();
   const [q, setQ] = useState("");
-  const list = s.conversations.filter((c) => !s.blocked.has(c.userId) && s.getUser(c.userId)?.username.includes(q.toLowerCase()));
+  const list = s.conversations.filter((c) => !s.blocked.has(c.userId) && s.getUser(c.userId)?.username?.includes(q.toLowerCase()));
   return (
     <>
-      <TopBar title={s.me.username} left={<button aria-label="Back" onClick={() => router.history.back()}><ChevronLeft className="size-6" /></button>} />
+      <TopBar title={s.me?.username ?? "Messages"} left={<button aria-label="Back" onClick={() => router.history.back()}><ChevronLeft className="size-6" /></button>} />
       <div className="p-3">
         <label className="flex items-center gap-2 rounded-xl bg-muted px-3 py-2.5">
           <Search className="size-4 text-muted-foreground" />
@@ -41,7 +41,8 @@ function Inbox() {
       <h3 className="px-4 pb-2 text-sm font-semibold">Messages</h3>
       <ul>
         {list.map((c) => {
-          const u = s.getUser(c.userId)!;
+          const u = s.getUser(c.userId);
+          if (!u) return null;
           const last = c.messages[c.messages.length - 1];
           return (
             <li key={c.id}>
@@ -50,7 +51,7 @@ function Inbox() {
                 <div className="min-w-0 flex-1 text-sm">
                   <p className={c.unread ? "font-bold" : "font-medium"}>{u.name}</p>
                   <p className={`truncate ${c.unread ? "font-semibold" : "text-muted-foreground"}`}>
-                    {last ? `${last.fromId === s.me.id ? "You: " : ""}${last.text} · ${timeAgo(last.createdAt)}` : "Say hi 👋"}
+                    {last ? `${last.fromId === s.me?.id ? "You: " : ""}${last.text} · ${timeAgo(last.createdAt)}` : "Say hi 👋"}
                   </p>
                 </div>
                 {c.unread > 0 && <span className="size-2.5 rounded-full bg-brand" />}
