@@ -215,7 +215,7 @@ export function CallManager() {
       {c.status !== "idle" && c.peer && (
         <div className="fixed inset-0 z-[100] flex flex-col items-center justify-between bg-background/95 px-6 py-16 backdrop-blur-xl animate-in fade-in">
           <div className="flex flex-col items-center gap-4 text-center">
-            <div className={c.status !== "connected" ? "rounded-full p-1 brand-gradient animate-pulse" : "rounded-full p-1 brand-gradient"}>
+            <div className={c.status !== "connected" ? "rounded-full p-1 bg-brand animate-pulse" : "rounded-full p-1 bg-brand"}>
               {c.peer.avatar
                 ? <img src={c.peer.avatar} alt="" className="size-28 rounded-full border-4 border-background object-cover" />
                 : <div className="flex size-28 items-center justify-center rounded-full border-4 border-background bg-muted text-3xl font-bold">{c.peer.name.slice(0, 1)}</div>}
@@ -240,7 +240,7 @@ export function CallManager() {
               <PhoneOff className="size-7" />
             </button>
             {c.status === "ringing" && (
-              <button onClick={accept} aria-label="Accept call" className="flex size-16 items-center justify-center rounded-full brand-gradient text-primary-foreground">
+              <button onClick={accept} aria-label="Accept call" className="flex size-16 items-center justify-center rounded-full bg-brand text-primary-foreground">
                 <Phone className="size-7" />
               </button>
             )}
