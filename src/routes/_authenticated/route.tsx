@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { LogoMark } from "@/components/shyfft/Logo";
 import { MadeWithLove } from "@/components/shyfft/MadeWithLove";
 import { useStore } from "@/lib/store";
+import { CallManager } from "@/components/shyfft/CallManager";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -29,5 +30,5 @@ function Gate() {
       </div>
     );
   }
-  return <Outlet />;
+  return <><Outlet /><CallManager /></>;
 }

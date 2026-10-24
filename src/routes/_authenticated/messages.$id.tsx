@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Check, CheckCheck, ChevronLeft, Film, ImagePlus, Loader2, Send, X } from "lucide-react";
+import { Check, CheckCheck, ChevronLeft, Film, ImagePlus, Loader2, Phone, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { UserAvatar } from "@/components/shyfft/Avatar";
@@ -7,6 +7,7 @@ import { MAX_FILE_SIZE, useStore } from "@/lib/store";
 import type { Message } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { VerifiedBadge } from "@/components/shyfft/VerifiedBadge";
+import { startCall } from "@/components/shyfft/CallManager";
 
 export const Route = createFileRoute("/_authenticated/messages/$id")({
   head: () => ({
@@ -76,6 +77,7 @@ function Chat() {
           <UserAvatar user={user} size={34} />
           <div className="leading-tight"><p className="flex items-center gap-1 text-sm font-semibold">{user.name}<VerifiedBadge show={user.verified} className="size-3.5" /></p><p className="text-xs text-muted-foreground">@{user.username}</p></div>
         </Link>
+        <button onClick={() => startCall({ id: user.id, name: user.name, username: user.username, avatar: user.avatar })} aria-label="Voice call" className="ml-auto rounded-full p-2 hover:bg-muted"><Phone className="size-5" /></button>
       </header>
       <div className="flex-1 space-y-2 overflow-y-auto p-4">
         {conv.messages.map((m) => (
