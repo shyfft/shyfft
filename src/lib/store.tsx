@@ -436,7 +436,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
         if (error) { fail(error); return; }
         const urls = media_url ? await signPaths([media_url]) : undefined;
-        setMessages((m) => [...m, toMessage(data, urls)]);
+        setMessages((m) => m.some((x) => x.id === data.id) ? m : [...m, toMessage(data, urls)]);
       },
       openConversation: (userId) => userId,
       markConversationRead: (userId) => {
