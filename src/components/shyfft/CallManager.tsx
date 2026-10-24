@@ -5,7 +5,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { useStore } from "@/lib/store";
 
-type Peer = { id: string; name: string; username: string; avatar?: string };
+type Peer = { id: string; name: string; username: string; avatar?: string | undefined };
 type Status = "idle" | "calling" | "ringing" | "connected";
 type State = { status: Status; peer: Peer | null; muted: boolean; startedAt: number | null };
 
@@ -88,7 +88,7 @@ async function makePc(peerId: string) {
   pc = new RTCPeerConnection({ iceServers: ICE });
   stream.getTracks().forEach((t) => pc!.addTrack(t, stream!));
   pc.onicecandidate = (e) => { if (e.candidate) signal(peerId, { kind: "ice", candidate: e.candidate.toJSON() }); };
-  pc.ontrack = (e) => { if (remoteAudio) { remoteAudio.srcObject = e.streams[0]; remoteAudio.play().catch(() => {}); } };
+  pc.ontrack = (e) => { if (remoteAudio) { remoteAudio.srcObject = e.streams[0] ?? null; remoteAudio.play().catch(() => {}); } };
   pc.onconnectionstatechange = () => {
     if (pc?.connectionState === "connected") { stopRing(); set({ status: "connected", startedAt: Date.now() }); }
     if (pc && ["failed", "closed"].includes(pc.connectionState)) { toast.error("Call disconnected"); cleanup(); }
@@ -97,7 +97,7 @@ async function makePc(peerId: string) {
 
 export async function startCall(peer: Peer) {
   if (!me) return;
-  if (state.status !== "idle") return toast.error("Already in a call");
+  if (state.status !== "idle") { toast.error("Already in a call"); return; }
   try {
     set({ status: "calling", peer });
     startRing(true);
@@ -155,7 +155,7 @@ async function onSignal(p: { kind: string; from: Peer; sdp?: RTCSessionDescripti
       startRing(false);
       if ("Notification" in window && Notification.permission === "granted" && document.visibilityState !== "visible") {
         try {
-          const n = new Notification("Incoming voice call", { body: `${p.from.name} (@${p.from.username}) is calling you`, icon: p.from.avatar, tag: "shyfft-call", requireInteraction: true });
+          const n = new Notification("Incoming voice call", { body: `${p.from.name} (@${p.from.username}) is calling you`, icon: p.from.avatar ?? "", tag: "shyfft-call", requireInteraction: true });
           n.onclick = () => { window.focus(); n.close(); };
         } catch { /* ignore */ }
       }
