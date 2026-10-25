@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { VerifiedBadge } from "@/components/shyfft/VerifiedBadge";
 import { startCall } from "@/components/shyfft/CallManager";
 import { formatActiveStatus } from "@/lib/format";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/messages/$id")({
   head: () => ({
@@ -22,6 +23,27 @@ export const Route = createFileRoute("/_authenticated/messages/$id")({
   component: Chat,
 });
 
+function formatMessageTime(t?: number) {
+  if (!t) return "";
+  return new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
+}
+
+function isSameDay(t1: number, t2: number) {
+  const d1 = new Date(t1);
+  const d2 = new Date(t2);
+  return d1.toDateString() === d2.toDateString();
+}
+
+function formatDateHeader(t: number) {
+  const d = new Date(t);
+  const today = new Date();
+  if (d.toDateString() === today.toDateString()) return "Today";
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
 function Chat() {
   const { id } = Route.useParams();
   const s = useStore();
@@ -33,16 +55,65 @@ function Chat() {
   const [preview, setPreview] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
+  const [isOtherTyping, setIsOtherTyping] = useState(false);
+
   const fileInput = useRef<HTMLInputElement>(null);
   const end = useRef<HTMLDivElement>(null);
+  const lastBroadcastRef = useRef<number>(0);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const roomId = [ME_ID, id].sort().join("-");
 
   const presence = user ? s.getUserPresence?.(user.id) ?? { isOnline: false } : { isOnline: false };
   const statusText = formatActiveStatus(presence.lastSeen, presence.isOnline);
 
-  useEffect(() => end.current?.scrollIntoView({ behavior: "smooth" }), [conv.messages.length]);
+  // Realtime typing broadcast listener
+  useEffect(() => {
+    if (!ME_ID || !id) return;
+    const channel = supabase.channel(`typing:${roomId}`);
+
+    channel
+      .on("broadcast", { event: "typing" }, (payload) => {
+        if (payload.payload?.userId === id) {
+          setIsOtherTyping(true);
+          if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+          typingTimeoutRef.current = setTimeout(() => {
+            setIsOtherTyping(false);
+          }, 2500);
+        }
+      })
+      .on("broadcast", { event: "stop-typing" }, (payload) => {
+        if (payload.payload?.userId === id) {
+          setIsOtherTyping(false);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [ME_ID, id, roomId]);
+
+  useEffect(() => end.current?.scrollIntoView({ behavior: "smooth" }), [conv.messages.length, isOtherTyping]);
   useEffect(() => { s.markConversationRead(id); }, [id, conv.unread]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
+
   if (!user) return <p className="p-10 text-center text-muted-foreground">Conversation not found</p>;
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setText(e.target.value);
+    if (!ME_ID || !id) return;
+    const now = Date.now();
+    if (now - lastBroadcastRef.current > 1200) {
+      lastBroadcastRef.current = now;
+      supabase.channel(`typing:${roomId}`).send({
+        type: "broadcast",
+        event: "typing",
+        payload: { userId: ME_ID },
+      });
+    }
+  };
 
   const pickFile = (f: File | null) => {
     if (!f) return;
@@ -52,6 +123,7 @@ function Chat() {
     setFile(f);
     setPreview(URL.createObjectURL(f));
   };
+
   const cancelFile = () => {
     if (preview) URL.revokeObjectURL(preview);
     setFile(null);
@@ -64,6 +136,14 @@ function Chat() {
     if (sending || (!text.trim() && !file)) return;
     setSending(true);
     setProgress(file ? 0 : null);
+
+    // Stop typing notification on send
+    supabase.channel(`typing:${roomId}`).send({
+      type: "broadcast",
+      event: "stop-typing",
+      payload: { userId: ME_ID },
+    });
+
     try {
       await s.sendMessage(id, text.trim(), file ? { file, onProgress: setProgress } : undefined);
       setText("");
@@ -91,7 +171,9 @@ function Chat() {
               <VerifiedBadge show={user.verified} className="size-3.5" />
             </p>
             <p className="flex items-center gap-1 text-xs text-muted-foreground">
-              {presence.isOnline ? (
+              {isOtherTyping ? (
+                <span className="font-semibold text-emerald-500 animate-pulse">typing...</span>
+              ) : presence.isOnline ? (
                 <span className="font-medium text-emerald-500">Active now</span>
               ) : statusText ? (
                 <span>{statusText}</span>
@@ -103,12 +185,38 @@ function Chat() {
         </Link>
         <button onClick={() => startCall({ id: user.id, name: user.name, username: user.username, avatar: user.avatar })} aria-label="Voice call" className="ml-auto rounded-full p-2 hover:bg-muted"><Phone className="size-5" /></button>
       </header>
+
       <div className="flex-1 space-y-2 overflow-y-auto p-4">
-        {conv.messages.map((m) => (
-          <Bubble key={m.id} m={m} mine={m.fromId === ME_ID} />
-        ))}
+        {conv.messages.map((m, idx) => {
+          const prev = conv.messages[idx - 1];
+          const showDate = !prev || !isSameDay(prev.createdAt, m.createdAt);
+          return (
+            <div key={m.id} className="space-y-1">
+              {showDate && (
+                <div className="my-3 flex justify-center">
+                  <span className="rounded-full bg-muted/80 px-3 py-0.5 text-[11px] font-medium text-muted-foreground">
+                    {formatDateHeader(m.createdAt)}
+                  </span>
+                </div>
+              )}
+              <Bubble m={m} mine={m.fromId === ME_ID} />
+            </div>
+          );
+        })}
+
+        {isOtherTyping && (
+          <div className="flex items-center gap-2 pt-1 animate-in fade-in duration-200">
+            <UserAvatar user={user} size={24} />
+            <div className="flex items-center gap-1 rounded-2xl bg-muted px-3.5 py-2">
+              <span className="size-1.5 rounded-full bg-foreground/60 animate-bounce [animation-delay:-0.3s]" />
+              <span className="size-1.5 rounded-full bg-foreground/60 animate-bounce [animation-delay:-0.15s]" />
+              <span className="size-1.5 rounded-full bg-foreground/60 animate-bounce" />
+            </div>
+          </div>
+        )}
         <div ref={end} />
       </div>
+
       {preview && file && (
         <div className="flex items-center gap-3 border-t px-3 pt-3">
           <div className="relative">
@@ -132,13 +240,14 @@ function Chat() {
           </div>
         </div>
       )}
+
       <form onSubmit={send} className="flex items-center gap-2 border-t p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <input ref={fileInput} type="file" accept="image/*,video/*" className="hidden" onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
         <button type="button" aria-label="Attach photo or video" onClick={() => fileInput.current?.click()}
           className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-foreground active:scale-90">
           <ImagePlus className="size-5" />
         </button>
-        <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Message…" className="flex-1 rounded-full bg-muted px-4 py-2.5 text-sm outline-none" />
+        <input value={text} onChange={handleTextChange} placeholder="Message…" className="flex-1 rounded-full bg-muted px-4 py-2.5 text-sm outline-none" />
         <button aria-label="Send" disabled={sending || (!text.trim() && !file)} className="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand text-primary-foreground disabled:opacity-40">
           {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
         </button>
@@ -173,15 +282,31 @@ function Bubble({ m, mine }: { m: Message; mine: boolean }) {
         {m.text && (
           <p className={cn("rounded-3xl px-4 py-2 text-sm", (m.media || m.postId) && "mt-1", mine ? "bg-brand text-primary-foreground" : "bg-muted")}>{m.text}</p>
         )}
-        {mine && (
-          <span className="mt-0.5 flex items-center gap-1 pr-1 text-[10px] text-muted-foreground" aria-label={m.read ? "Seen" : m.deliveredAt ? "Delivered" : "Sent"}>
-            {m.read
-              ? <><CheckCheck className="size-3.5 text-verified" /> Seen</>
-              : m.deliveredAt
-                ? <><CheckCheck className="size-3.5" /> Delivered</>
-                : <><Check className="size-3.5" /> Sent</>}
-          </span>
-        )}
+        <div className="mt-0.5 flex items-center gap-1.5 px-1 text-[10px] text-muted-foreground">
+          <span>{formatMessageTime(m.createdAt)}</span>
+          {mine && (
+            <span className="flex items-center gap-1" aria-label={m.read ? "Seen" : m.deliveredAt ? "Delivered" : "Sent"}>
+              {m.read ? (
+                <>
+                  <CheckCheck className="size-3.5 text-emerald-500" />
+                  <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                    Seen{m.readAt ? ` · ${formatMessageTime(m.readAt)}` : ""}
+                  </span>
+                </>
+              ) : m.deliveredAt ? (
+                <>
+                  <CheckCheck className="size-3.5 text-muted-foreground" />
+                  <span>Delivered · {formatMessageTime(m.deliveredAt)}</span>
+                </>
+              ) : (
+                <>
+                  <Check className="size-3.5 text-muted-foreground" />
+                  <span>Sent</span>
+                </>
+              )}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
