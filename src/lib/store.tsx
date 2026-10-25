@@ -1,27 +1,30 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import type { Tables } from "@/integrations/supabase/types";
-import type { Conversation, Message, Notification, Post, Story, User } from "./types";
-import { avatarFallback } from "./format";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { reportCaughtError } from "./error-capture";
+import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
+import { avatarFallback } from "./format";
+import type { Comment, Conversation, MediaType, Message, Notification, Post, Story, User } from "./types";
 
-export type Theme = "light" | "dark";
+type Tables = Database["public"]["Tables"];
+type Theme = "light" | "dark";
 
 type Store = {
   ready: boolean;
-  theme: Theme;
-  me: User | undefined;
+  authed: boolean;
+  me: User;
   users: User[];
   posts: Post[];
   stories: Story[];
-  notifications: Notification[];
   conversations: Conversation[];
+  notifications: Notification[];
   liked: Set<string>;
   saved: Set<string>;
   following: Set<string>;
   blocked: Set<string>;
+  theme: Theme;
+  privateAccount: boolean;
   getUser: (id: string) => User | undefined;
+  byUsername: (u: string) => User | undefined;
   toggleLike: (postId: string) => void;
   toggleSave: (postId: string) => void;
   toggleFollow: (userId: string) => void;
@@ -43,7 +46,9 @@ type Store = {
   setPrivateAccount: (v: boolean) => void;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
+  /** UI hint only; the database enforces admin rights in set_user_verified. */
   isAdmin: boolean;
+  /** UI hint only; database functions/RLS enforce these. */
   perms: { verify: boolean; deletePosts: boolean; viewReports: boolean };
   setVerified: (userId: string, verified: boolean) => Promise<void>;
   getUserPresence: (userId: string) => { isOnline: boolean; lastSeen?: number };
@@ -78,8 +83,9 @@ function toUser(p: Tables["profiles"]["Row"], urls: Map<string, string>): User {
   };
 }
 
-export const MAX_FILE_SIZE = 250 * 1024 * 1024;
+export const MAX_FILE_SIZE = 250 * 1024 * 1024; // 250 MB — matches the media bucket limit
 
+// XHR-based upload so large files report real progress and never block the UI thread.
 async function uploadMedia(uid: string, file: File, onProgress?: (pct: number) => void) {
   const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
   const path = `${uid}/${crypto.randomUUID()}.${ext}`;
@@ -99,12 +105,12 @@ async function uploadMedia(uid: string, file: File, onProgress?: (pct: number) =
       if (xhr.status >= 200 && xhr.status < 300) resolve();
       else {
         let msg = `Upload failed (${xhr.status})`;
-        try { msg = JSON.parse(xhr.responseText)?.message ?? msg; } catch {}
+        try { msg = JSON.parse(xhr.responseText)?.message ?? msg; } catch { /* keep default */ }
         reject(new Error(msg));
       }
     };
-    xhr.onerror = () => reject(new Error("Network error during upload"));
-    xhr.ontimeout = () => reject(new Error("Upload timed out"));
+    xhr.onerror = () => reject(new Error("Network error during upload — check your connection and try again"));
+    xhr.ontimeout = () => reject(new Error("Upload timed out — try again on a better connection"));
     xhr.send(file);
   });
   return path;
@@ -112,8 +118,10 @@ async function uploadMedia(uid: string, file: File, onProgress?: (pct: number) =
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [uid, setUid] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [perms, setPerms] = useState({ verify: false, deletePosts: false, viewReports: false });
   const [users, setUsers] = useState<User[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
   const [stories, setStories] = useState<Story[]>([]);
@@ -131,104 +139,114 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const uidRef = useRef<string | null>(null);
   uidRef.current = uid;
 
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [perms, setPerms] = useState<{ verify: boolean; deletePosts: boolean; viewReports: boolean }>({
-    verify: false, deletePosts: false, viewReports: false,
-  });
-
+  // Theme
   useEffect(() => {
-    const savedTheme = (localStorage.getItem("shyfft_theme") as Theme) || "light";
-    setThemeState(savedTheme);
-    document.documentElement.classList.toggle("dark", savedTheme === "dark");
+    const t = localStorage.getItem("shyfft-theme") as Theme | null;
+    if (t) setThemeState(t);
+    else if (window.matchMedia("(prefers-color-scheme: dark)").matches) setThemeState("dark");
   }, []);
 
-  const setTheme = (t: Theme) => {
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  }, [theme]);
+
+  const setTheme = useCallback((t: Theme) => {
     setThemeState(t);
-    localStorage.setItem("shyfft_theme", t);
-    document.documentElement.classList.toggle("dark", t === "dark");
-  };
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUid(session?.user?.id ?? null);
-      setAuthChecked(true);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
-      setUid(session?.user?.id ?? null);
-      setAuthChecked(true);
-    });
-    return () => subscription.unsubscribe();
+    localStorage.setItem("shyfft-theme", t);
   }, []);
 
-  const load = async (userId: string) => {
-    try {
-      const [pRes, postRes, sRes, mRes, nRes, lRes, svRes, fRes, bRes, rRes, permRes] = await Promise.all([
-        supabase.from("profiles").select("*"),
-        supabase.from("posts").select("*, comments(*)").order("created_at", { ascending: false }),
-        supabase.from("stories").select("*").gt("expires_at", new Date().toISOString()).order("created_at", { ascending: false }),
-        supabase.from("messages").select("*").or(`sender_id.eq.${userId},recipient_id.eq.${userId}`).order("created_at", { ascending: true }),
-        supabase.from("notifications").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
-        supabase.from("likes").select("post_id").eq("user_id", userId),
-        supabase.from("saves").select("post_id").eq("user_id", userId),
-        supabase.from("follows").select("following_id").eq("follower_id", userId),
-        supabase.from("blocks").select("blocked_id").eq("blocker_id", userId),
-        supabase.from("user_roles").select("role").eq("user_id", userId),
-        supabase.from("admin_permissions").select("can_verify, can_delete_posts, can_view_reports").eq("user_id", userId).maybeSingle(),
-      ]);
-
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      const isSuper = authUser?.email === "shreyashchavaragi@gmail.com";
-      const hasAdminRole = rRes.data?.some((r) => r.role === "admin") ?? false;
-      const isUserAdmin = isSuper || hasAdminRole;
-      setIsAdmin(isUserAdmin);
-
-      if (isUserAdmin) {
-        setPerms({ verify: true, deletePosts: true, viewReports: true });
-      } else if (permRes.data) {
-        setPerms({
-          verify: !!permRes.data.can_verify,
-          deletePosts: !!permRes.data.can_delete_posts,
-          viewReports: !!permRes.data.can_view_reports,
-        });
-      } else {
-        setPerms({ verify: false, deletePosts: false, viewReports: false });
+  // Auth
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "INITIAL_SESSION" || event === "USER_UPDATED") {
+        setUid(session?.user.id ?? null);
+        setAuthChecked(true);
       }
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
 
-      const pathsToSign: string[] = [];
-      pRes.data?.forEach((p) => p.avatar_url && pathsToSign.push(p.avatar_url));
-      postRes.data?.forEach((p) => p.media_url && pathsToSign.push(p.media_url));
-      sRes.data?.forEach((s) => s.media_url && pathsToSign.push(s.media_url));
-      mRes.data?.forEach((m) => m.media_url && pathsToSign.push(m.media_url));
-      const urls = await signPaths(pathsToSign);
+  const load = useCallback(async (me: string) => {
+    const dayAgo = new Date(Date.now() - 24 * 3600_000).toISOString();
+    const [profiles, postsRes, likes, saves, follows, blocks, storiesRes, msgs, notifs] = await Promise.all([
+      supabase.from("profiles").select("*").limit(1000),
+      supabase.from("posts").select("*").order("created_at", { ascending: false }).limit(200),
+      supabase.from("likes").select("post_id").eq("user_id", me),
+      supabase.from("saves").select("post_id").eq("user_id", me),
+      supabase.from("follows").select("following_id").eq("follower_id", me),
+      supabase.from("blocks").select("blocked_id").eq("blocker_id", me),
+      supabase.from("stories").select("*").gt("created_at", dayAgo).order("created_at", { ascending: false }),
+      supabase.from("messages").select("*").or(`sender_id.eq.${me},recipient_id.eq.${me}`).order("created_at").limit(1000),
+      supabase.from("notifications").select("*").eq("user_id", me).order("created_at", { ascending: false }).limit(100),
+    ]);
 
-      setUsers((pRes.data ?? []).map((p) => toUser(p, urls)));
-      setPosts((postRes.data ?? []).map((p) => toPost(p, urls)));
-      setStories((sRes.data ?? []).map((s) => toStory(s, urls)));
-      setMessages((mRes.data ?? []).map((m) => toMessage(m, urls)));
-      setNotifications((nRes.data ?? []).map(toNotification));
-      setLiked(new Set((lRes.data ?? []).map((l) => l.post_id)));
-      setSaved(new Set((svRes.data ?? []).map((s) => s.post_id)));
-      setFollowing(new Set((fRes.data ?? []).map((f) => f.following_id)));
-      setBlocked(new Set((bRes.data ?? []).map((b) => b.blocked_id)));
+    const postRows = postsRes.data ?? [];
+    const commentsRes = postRows.length
+      ? await supabase.from("comments").select("*").in("post_id", postRows.map((p) => p.id)).order("created_at")
+      : { data: [] as Tables["comments"]["Row"][] };
 
-      const undelivered = (mRes.data ?? []).filter((m) => m.recipient_id === userId && !m.delivered_at).map((m) => m.id);
-      if (undelivered.length) {
-        supabase.from("messages").update({ delivered_at: new Date().toISOString() }).in("id", undelivered).then();
-      }
-    } catch {
-      // silent background handling
-    } finally {
-      setReady(true);
+    const urls = await signPaths([
+      ...(profiles.data ?? []).map((p) => p.avatar_url ?? ""),
+      ...postRows.map((p) => p.media_url),
+      ...(storiesRes.data ?? []).map((s) => s.media_url),
+      ...(msgs.data ?? []).map((m) => m.media_url ?? ""),
+    ]);
+
+    const byPost = new Map<string, Comment[]>();
+    (commentsRes.data ?? []).forEach((c) => {
+      const list = byPost.get(c.post_id) ?? [];
+      list.push({ id: c.id, userId: c.user_id, text: c.text, createdAt: ts(c.created_at) });
+      byPost.set(c.post_id, list);
+    });
+
+    setUsers((profiles.data ?? []).map((p) => toUser(p, urls)));
+    setPosts(postRows.map((p) => ({
+      id: p.id,
+      userId: p.user_id,
+      media: urls.get(p.media_url) ?? p.media_url,
+      mediaType: p.media_type as Post["mediaType"],
+      kind: p.kind as Post["kind"],
+      caption: p.caption,
+      likes: p.like_count,
+      commentCount: p.comment_count,
+      comments: byPost.get(p.id) ?? [],
+      createdAt: ts(p.created_at),
+      location: p.location ?? undefined,
+    })));
+    setStories((storiesRes.data ?? []).map((s) => ({
+      id: s.id,
+      userId: s.user_id,
+      media: urls.get(s.media_url) ?? s.media_url,
+      createdAt: ts(s.created_at),
+    })));
+    setLiked(new Set((likes.data ?? []).map((l) => l.post_id)));
+    setSaved(new Set((saves.data ?? []).map((l) => l.post_id)));
+    setFollowing(new Set((follows.data ?? []).map((f) => f.following_id)));
+    setBlocked(new Set((blocks.data ?? []).map((b) => b.blocked_id)));
+    setMessages((msgs.data ?? []).map((m) => toMessage(m, urls)));
+
+    const undelivered = (msgs.data ?? []).filter((m) => m.recipient_id === me && !m.delivered_at).map((m) => m.id);
+    if (undelivered.length) {
+      supabase.from("messages").update({ delivered_at: new Date().toISOString() }).in("id", undelivered).then();
     }
-  };
 
-  const syncMessages = async (meId: string) => {
+    setNotifications((notifs.data ?? []).map(toNotification));
+
+    const adminRes = await supabase.rpc("has_role", { _user_id: me, _role: "admin" });
+    setIsAdmin(adminRes.data === true);
+    const permRes = await supabase.from("admin_permissions").select("*").eq("user_id", me).maybeSingle();
+    const sup = adminRes.data === true;
+    setPerms({ verify: sup || !!permRes.data?.can_verify, deletePosts: sup || !!permRes.data?.can_delete_posts, viewReports: sup || !!permRes.data?.can_view_reports });
+    setReady(true);
+  }, []);
+
+  // Silent background resync of just the messages — merges by id so nothing
+  // duplicates, disappears, or resets scroll position. Used after realtime
+  // (re)connects and when the network comes back.
+  const syncMessages = useCallback(async (meId: string) => {
     try {
-      const { data, error } = await supabase
-        .from("messages")
-        .select("*")
-        .or(`sender_id.eq.${meId},recipient_id.eq.${meId}`)
-        .order("created_at", { ascending: true });
+      const { data, error } = await supabase.from("messages").select("*")
+        .or(`sender_id.eq.${meId},recipient_id.eq.${meId}`).order("created_at").limit(1000);
       if (error || !data) return;
       const urls = await signPaths(data.map((m) => m.media_url ?? ""));
       const incoming = data.map((m) => toMessage(m, urls));
@@ -241,10 +259,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (undelivered.length) {
         supabase.from("messages").update({ delivered_at: new Date().toISOString() }).in("id", undelivered).then();
       }
-    } catch {
-      // silent
-    }
-  };
+    } catch { /* background resync must never surface errors */ }
+  }, []);
 
   useEffect(() => {
     if (!uid) { setReady(false); return; }
@@ -259,36 +275,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             let urls: Map<string, string> | undefined;
             try {
               urls = isPath(row.media_url) ? await signPaths([row.media_url!]) : undefined;
-            } catch {}
+            } catch { /* media URL can be re-signed later; still show the message */ }
             setMessages((m) => m.some((x) => x.id === row.id) ? m : [...m, toMessage(row, urls)]);
             supabase.from("messages").update({ delivered_at: new Date().toISOString() }).eq("id", row.id).is("delivered_at", null).then();
-          } catch {}
+          } catch { /* a realtime event must never crash the app */ }
         })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages", filter: `sender_id=eq.${uid}` },
         (p) => {
           const row = p.new as Tables["messages"]["Row"];
           setMessages((ms) => ms.map((m) => m.id === row.id
-            ? {
-                ...m,
-                read: !!row.read_at,
-                deliveredAt: row.delivered_at ? ts(row.delivered_at) : m.deliveredAt,
-                readAt: row.read_at ? ts(row.read_at) : m.readAt,
-              }
+            ? { ...m, read: !!row.read_at, deliveredAt: row.delivered_at ? ts(row.delivered_at) : m.deliveredAt }
             : m));
         })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${uid}` },
         (p) => setNotifications((n) => [toNotification(p.new as Tables["notifications"]["Row"]), ...n]))
       .subscribe((status) => {
+        // After every (re)join — including automatic reconnects — quietly catch
+        // up on anything missed while the socket was down. No reload, no toast.
         if (status === "SUBSCRIBED") syncMessages(uid);
       });
 
     const onOnline = () => syncMessages(uid);
     window.addEventListener("online", onOnline);
-
-    // Silent 2-second auto sync in background without page refresh
-    const syncInterval = setInterval(() => {
-      if (uid) syncMessages(uid);
-    }, 2000);
 
     const presenceChannel = supabase.channel("online-presence", {
       config: { presence: { key: uid } },
@@ -330,107 +338,96 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       });
 
     return () => {
-      clearInterval(syncInterval);
       window.removeEventListener("online", onOnline);
       supabase.removeChannel(channel);
       supabase.removeChannel(presenceChannel);
     };
-  }, [uid]);
+  }, [uid, load, syncMessages]);
 
   const me = users.find((u) => u.id === uid);
 
   const conversations = useMemo<Conversation[]>(() => {
     if (!uid) return [];
     const map = new Map<string, Message[]>();
-    for (const m of messages) {
+    messages.forEach((m) => {
       const other = m.fromId === uid ? m.toId : m.fromId;
-      if (!map.has(other)) map.set(other, []);
-      map.get(other)!.push(m);
-    }
-    return Array.from(map.entries()).map(([userId, ms]) => ({
-      id: userId,
-      userId,
-      messages: ms,
-      unread: ms.filter((m) => m.toId === uid && !m.read).length,
-    }));
-  }, [uid, messages]);
+      map.set(other, [...(map.get(other) ?? []), m]);
+    });
+    return [...map.entries()]
+      .map(([userId, ms]) => ({ id: userId, userId, messages: ms, unread: ms.filter((m) => m.toId === uid && !m.read).length }))
+      .sort((a, b) => (b.messages.at(-1)?.createdAt ?? 0) - (a.messages.at(-1)?.createdAt ?? 0));
+  }, [messages, uid]);
+
+  const fail = (e: any) => {
+    const msg = e?.message || e?.error_description || (typeof e === "string" ? e : "Something went wrong");
+    toast.error(msg);
+  };
 
   const value = useMemo<Store>(() => {
     const myId = uid ?? "";
     return {
-      ready,
-      theme,
-      me,
+      ready: ready && !!me,
+      authed: authChecked && !!uid,
+      me: me as User,
       users,
-      posts,
-      stories,
-      notifications,
       conversations,
+      notifications,
       liked,
       saved,
       following,
       blocked,
-      isAdmin,
-      perms,
+      theme,
+      privateAccount: !!me?.isPrivate,
+      posts: posts.filter((p) => !blocked.has(p.userId)),
+      stories: stories.filter((s) => !blocked.has(s.userId)),
       getUser: (id) => users.find((u) => u.id === id),
-      getUserPresence: (userId: string) => {
-        const isOnline = onlineUserIds.has(userId);
-        if (isOnline) return { isOnline: true, lastSeen: Date.now() };
-        let lastSeen = lastSeenMap[userId];
-        if (!lastSeen) {
-          const userMsgs = messages.filter((m) => m.fromId === userId);
-          if (userMsgs.length > 0) lastSeen = userMsgs[userMsgs.length - 1].createdAt;
-        }
-        if (!lastSeen) {
-          const userPosts = posts.filter((p) => p.userId === userId);
-          if (userPosts.length > 0) lastSeen = userPosts[0].createdAt;
-        }
-        return { isOnline: false, lastSeen };
+      byUsername: (n) => users.find((u) => u.username === n),
+      toggleLike: (id) => {
+        const was = liked.has(id);
+        setLiked((s) => { const n = new Set(s); was ? n.delete(id) : n.add(id); return n; });
+        setPosts((ps) => ps.map((p) => (p.id === id ? { ...p, likes: p.likes + (was ? -1 : 1) } : p)));
+        (was ? supabase.from("likes").delete().match({ user_id: myId, post_id: id }) : supabase.from("likes").insert({ user_id: myId, post_id: id }))
+          .then(({ error }) => error && fail(error));
       },
-      toggleLike: (postId) => {
-        const wasLiked = liked.has(postId);
-        setLiked((l) => { const n = new Set(l); wasLiked ? n.delete(postId) : n.add(postId); return n; });
-        setPosts((ps) => ps.map((p) => (p.id === postId ? { ...p, likes: p.likes + (wasLiked ? -1 : 1) } : p)));
-        (wasLiked ? supabase.from("likes").delete().match({ post_id: postId, user_id: myId }) : supabase.from("likes").insert({ post_id: postId, user_id: myId })).then();
+      toggleSave: (id) => {
+        const was = saved.has(id);
+        setSaved((s) => { const n = new Set(s); was ? n.delete(id) : n.add(id); return n; });
+        (was ? supabase.from("saves").delete().match({ user_id: myId, post_id: id }) : supabase.from("saves").insert({ user_id: myId, post_id: id }))
+          .then(({ error }) => error && fail(error));
       },
-      toggleSave: (postId) => {
-        const wasSaved = saved.has(postId);
-        setSaved((s) => { const n = new Set(s); wasSaved ? n.delete(postId) : n.add(postId); return n; });
-        (wasSaved ? supabase.from("saves").delete().match({ post_id: postId, user_id: myId }) : supabase.from("saves").insert({ post_id: postId, user_id: myId })).then();
+      toggleFollow: (id) => {
+        const was = following.has(id);
+        setFollowing((s) => { const n = new Set(s); was ? n.delete(id) : n.add(id); return n; });
+        setUsers((us) => us.map((u) =>
+          u.id === id ? { ...u, followers: u.followers + (was ? -1 : 1) } :
+          u.id === myId ? { ...u, following: u.following + (was ? -1 : 1) } : u));
+        (was ? supabase.from("follows").delete().match({ follower_id: myId, following_id: id }) : supabase.from("follows").insert({ follower_id: myId, following_id: id }))
+          .then(({ error }) => error && fail(error));
       },
-      toggleFollow: (userId) => {
-        const wasFollowing = following.has(userId);
-        setFollowing((f) => { const n = new Set(f); wasFollowing ? n.delete(userId) : n.add(userId); return n; });
-        setUsers((us) => us.map((u) => {
-          if (u.id === userId) return { ...u, followers: u.followers + (wasFollowing ? -1 : 1) };
-          if (u.id === myId) return { ...u, following: u.following + (wasFollowing ? -1 : 1) };
-          return u;
-        }));
-        (wasFollowing ? supabase.from("follows").delete().match({ follower_id: myId, following_id: userId }) : supabase.from("follows").insert({ follower_id: myId, following_id: userId })).then();
-      },
-      toggleBlock: (userId) => {
-        const wasBlocked = blocked.has(userId);
-        setBlocked((b) => { const n = new Set(b); wasBlocked ? n.delete(userId) : n.add(userId); return n; });
-        (wasBlocked ? supabase.from("blocks").delete().match({ blocker_id: myId, blocked_id: userId }) : supabase.from("blocks").insert({ blocker_id: myId, blocked_id: userId })).then();
+      toggleBlock: (id) => {
+        const was = blocked.has(id);
+        setBlocked((s) => { const n = new Set(s); was ? n.delete(id) : n.add(id); return n; });
+        if (!was) setFollowing((s) => { const n = new Set(s); n.delete(id); return n; });
+        (was ? supabase.from("blocks").delete().match({ blocker_id: myId, blocked_id: id }) : supabase.from("blocks").insert({ blocker_id: myId, blocked_id: id }))
+          .then(({ error }) => error && fail(error));
       },
       report: async (userId, reason, postId) => {
-        await supabase.from("reports").insert({ reporter_id: myId, reported_user_id: userId, reported_post_id: postId ?? null, reason });
-        toast.success("Report submitted — thank you for keeping shyfft safe");
+        const { error } = await supabase.from("reports").insert({ reporter_id: myId, target_user_id: userId, post_id: postId ?? null, reason });
+        if (error) throw error;
       },
       addComment: async (postId, text) => {
-        const { data } = await supabase.from("comments").insert({ post_id: postId, user_id: myId, text }).select().single();
-        if (data) {
-          const c = { id: data.id, userId: myId, text, createdAt: ts(data.created_at) };
-          setPosts((ps) => ps.map((p) => (p.id === postId ? { ...p, commentCount: p.commentCount + 1, comments: [...p.comments, c] } : p)));
-        }
+        const { data, error } = await supabase.from("comments").insert({ post_id: postId, user_id: myId, text }).select().single();
+        if (error) { fail(error); return; }
+        setPosts((ps) => ps.map((p) => p.id === postId
+          ? { ...p, commentCount: p.commentCount + 1, comments: [...p.comments, { id: data.id, userId: myId, text, createdAt: ts(data.created_at) }] } : p));
       },
       createPost: async ({ file, kind, caption, location, onProgress }) => {
         const path = await uploadMedia(myId, file, onProgress);
-        const media_type = file.type.startsWith("video") ? "video" : "image";
         const { data, error } = await supabase.from("posts").insert({
-          user_id: myId, media_url: path, media_type, kind, caption, location: location ?? null,
+          user_id: myId, media_url: path, media_type: file.type.startsWith("video") ? "video" : "image", kind, caption, location: location ?? null,
         }).select().single();
         if (error) throw error;
+        // Insert locally instead of reloading everything — no feed flicker or scroll reset.
         const localUrl = URL.createObjectURL(file);
         setPosts((ps) => [{
           id: data.id, userId: myId, media: localUrl,
@@ -467,43 +464,53 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         let media_url: string | null = null;
         let media_type: string | null = null;
         if (opts?.file) {
-          if (opts.file.size > MAX_FILE_SIZE) return;
-          if (!/^image\/|^video\//.test(opts.file.type)) return;
+          if (opts.file.size > MAX_FILE_SIZE) { fail(new Error("File too large — max 250 MB")); return; }
+          if (!/^image\/|^video\//.test(opts.file.type)) { fail(new Error("Only photos and videos can be sent")); return; }
           try {
             media_url = await uploadMedia(myId, opts.file, opts.onProgress);
-          } catch {
-            return;
-          }
+          } catch (e) { fail(e); return; }
           media_type = opts.file.type.startsWith("video") ? "video" : "image";
         }
 
+        // Database me text empty hone par aane wale constraint error ka permanent fix
         const trimmed = text.trim();
         const safeText = trimmed.length > 0 
           ? trimmed 
           : (opts?.file ? (opts.file.type.startsWith("video") ? "🎥 Video" : "📷 Photo") : (opts?.postId ? "🎬 Reel" : " "));
 
-        try {
-          const { data, error } = await supabase.from("messages").insert({
-            sender_id: myId,
-            recipient_id: userId,
-            text: safeText,
-            media_url,
-            media_type,
-            post_id: opts?.postId ?? null,
-          }).select().single();
+        const { data, error } = await supabase.from("messages").insert({
+          sender_id: myId,
+          recipient_id: userId,
+          text: safeText,
+          media_url,
+          media_type,
+          post_id: opts?.postId ?? null,
+        }).select().single();
 
-          if (error || !data) return;
-          const urls = media_url ? await signPaths([media_url]) : undefined;
-          setMessages((m) => m.some((x) => x.id === data.id) ? m : [...m, toMessage(data, urls)]);
-        } catch {}
+        if (error) { fail(error); return; }
+        const urls = media_url ? await signPaths([media_url]) : undefined;
+        setMessages((m) => m.some((x) => x.id === data.id) ? m : [...m, toMessage(data, urls)]);
+      },
+      getUserPresence: (userId: string) => {
+        const isOnline = onlineUserIds.has(userId);
+        if (isOnline) return { isOnline: true, lastSeen: Date.now() };
+
+        let lastSeen = lastSeenMap[userId];
+        if (!lastSeen) {
+          const userMsgs = messages.filter((m) => m.fromId === userId);
+          if (userMsgs.length > 0) lastSeen = userMsgs[userMsgs.length - 1].createdAt;
+        }
+        if (!lastSeen) {
+          const userPosts = posts.filter((p) => p.userId === userId);
+          if (userPosts.length > 0) lastSeen = userPosts[0].createdAt;
+        }
+        return { isOnline: false, lastSeen };
       },
       openConversation: (userId) => userId,
       markConversationRead: (userId) => {
         if (!messages.some((m) => m.fromId === userId && m.toId === myId && !m.read)) return;
-        const now = new Date().toISOString();
-        const nowTs = new Date(now).getTime();
-        setMessages((ms) => ms.map((m) => (m.fromId === userId && m.toId === myId ? { ...m, read: true, readAt: nowTs } : m)));
-        supabase.from("messages").update({ read_at: now }).match({ sender_id: userId, recipient_id: myId }).is("read_at", null).then();
+        setMessages((ms) => ms.map((m) => (m.fromId === userId && m.toId === myId ? { ...m, read: true } : m)));
+        supabase.from("messages").update({ read_at: new Date().toISOString() }).match({ sender_id: userId, recipient_id: myId }).is("read_at", null).then();
       },
       markNotificationsRead: () => {
         setNotifications((ns) => ns.map((n) => ({ ...n, read: true })));
@@ -511,13 +518,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       updateMe: async (patch) => {
         const { error } = await supabase.from("profiles").update({
-          username: patch.username,
-          name: patch.name,
-          bio: patch.bio,
-          is_private: patch.isPrivate,
-          onboarded: patch.onboarded,
+          ...(patch.username !== undefined && { username: patch.username }),
+          ...(patch.name !== undefined && { name: patch.name }),
+          ...(patch.bio !== undefined && { bio: patch.bio }),
+          ...(patch.isPrivate !== undefined && { is_private: patch.isPrivate }),
+          ...(patch.onboarded !== undefined && { onboarded: patch.onboarded }),
         }).eq("id", myId);
-        if (error) return error.message;
+        if (error) return error.code === "23505" ? "That username is taken" : error.message;
         setUsers((us) => us.map((u) => (u.id === myId ? { ...u, ...patch } : u)));
         return null;
       },
@@ -525,27 +532,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const path = await uploadMedia(myId, file);
         const { error } = await supabase.from("profiles").update({ avatar_url: path }).eq("id", myId);
         if (error) throw error;
-        const urls = await signPaths([path]);
-        const signed = urls.get(path);
-        setUsers((us) => us.map((u) => (u.id === myId ? { ...u, avatar: signed ?? u.avatar, avatarPath: path } : u)));
-        toast.success("Profile photo updated");
+        const url = URL.createObjectURL(file);
+        setUsers((us) => us.map((u) => (u.id === myId ? { ...u, avatar: url, avatarPath: path } : u)));
       },
-      setPrivateAccount: (isPrivate) => {
-        setUsers((us) => us.map((u) => (u.id === myId ? { ...u, isPrivate } : u)));
-        supabase.from("profiles").update({ is_private: isPrivate }).eq("id", myId).then();
+      setTheme,
+      setPrivateAccount: (v) => {
+        setUsers((us) => us.map((u) => (u.id === myId ? { ...u, isPrivate: v } : u)));
+        supabase.from("profiles").update({ is_private: v }).eq("id", myId).then(({ error }) => error && fail(error));
       },
-      signOut: async () => {
-        await supabase.auth.signOut();
-        setUid(null);
-      },
-      refresh: () => load(myId),
+      signOut: async () => { await supabase.auth.signOut(); },
+      refresh: async () => { if (uidRef.current) await load(uidRef.current); },
+      isAdmin,
+      perms,
       setVerified: async (userId, verified) => {
         const { error } = await supabase.rpc("set_user_verified", { _target: userId, _verified: verified });
         if (error) throw error;
         setUsers((us) => us.map((u) => (u.id === userId ? { ...u, verified } : u)));
       },
     };
-  }, [uid, ready, authChecked, me, users, posts, stories, messages, conversations, notifications, liked, saved, following, blocked, theme, setTheme, isAdmin, perms, onlineUserIds, lastSeenMap]);
+  }, [uid, ready, authChecked, me, users, posts, stories, messages, conversations, notifications, liked, saved, following, blocked, theme, setTheme, load, isAdmin, perms, onlineUserIds, lastSeenMap]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
@@ -560,42 +565,9 @@ function toMessage(m: Tables["messages"]["Row"], urls?: Map<string, string>): Me
     createdAt: ts(m.created_at),
     read: !!m.read_at,
     deliveredAt: m.delivered_at ? ts(m.delivered_at) : undefined,
-    readAt: m.read_at ? ts(m.read_at) : undefined,
     media: m.media_url ? (mediaPath ? urls?.get(mediaPath) : m.media_url) : undefined,
-    mediaType: m.media_type as Message["mediaType"],
+    mediaType: (m.media_type as MediaType | null) ?? undefined,
     postId: m.post_id ?? undefined,
-  };
-}
-
-function toPost(p: Tables["posts"]["Row"] & { comments?: Tables["comments"]["Row"][] }, urls: Map<string, string>): Post {
-  const mediaPath = isPath(p.media_url) ? p.media_url : null;
-  return {
-    id: p.id,
-    userId: p.user_id,
-    media: mediaPath ? urls.get(mediaPath) ?? p.media_url : p.media_url,
-    mediaType: p.media_type as Post["mediaType"],
-    kind: p.kind as Post["kind"],
-    caption: p.caption,
-    likes: p.likes_count,
-    commentCount: p.comments_count,
-    comments: (p.comments ?? []).map((c) => ({
-      id: c.id,
-      userId: c.user_id,
-      text: c.text,
-      createdAt: ts(c.created_at),
-    })),
-    createdAt: ts(p.created_at),
-    location: p.location ?? undefined,
-  };
-}
-
-function toStory(s: Tables["stories"]["Row"], urls: Map<string, string>): Story {
-  const mediaPath = isPath(s.media_url) ? s.media_url : null;
-  return {
-    id: s.id,
-    userId: s.user_id,
-    media: mediaPath ? urls.get(mediaPath) ?? s.media_url : s.media_url,
-    createdAt: ts(s.created_at),
   };
 }
 
@@ -603,15 +575,16 @@ function toNotification(n: Tables["notifications"]["Row"]): Notification {
   return {
     id: n.id,
     type: n.type as Notification["type"],
-    userId: n.actor_id ?? n.user_id,
+    userId: n.actor_id,
     postId: n.post_id ?? undefined,
+    text: n.text ?? undefined,
     createdAt: ts(n.created_at),
     read: n.read,
   };
 }
 
 export function useStore() {
-  const v = useContext(Ctx);
-  if (!v) throw new Error("useStore must be inside StoreProvider");
-  return v;
+  const s = useContext(Ctx);
+  if (!s) throw new Error("useStore must be used inside StoreProvider");
+  return s;
 }
