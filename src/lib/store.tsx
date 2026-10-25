@@ -51,8 +51,9 @@ type Store = {
   /** UI hint only; database functions/RLS enforce these. */
   perms: { verify: boolean; deletePosts: boolean; viewReports: boolean };
   setVerified: (userId: string, verified: boolean) => Promise<void>;
-};
   getUserPresence: (userId: string) => { isOnline: boolean; lastSeen?: number };
+};
+
 const Ctx = createContext<Store | null>(null);
 const ts = (s: string) => new Date(s).getTime();
 const isPath = (v: string | null | undefined): v is string => !!v && !/^https?:/.test(v);
@@ -131,7 +132,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [following, setFollowing] = useState<Set<string>>(new Set());
   const [blocked, setBlocked] = useState<Set<string>>(new Set());
   const [theme, setThemeState] = useState<Theme>("light");
-    const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const [lastSeenMap, setLastSeenMap] = useState<Record<string, number>>(() => {
     try { return JSON.parse(localStorage.getItem("shyfft_last_seen") || "{}"); } catch { return {}; }
   });
@@ -296,7 +297,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     const onOnline = () => syncMessages(uid);
     window.addEventListener("online", onOnline);
-        const presenceChannel = supabase.channel("online-presence", {
+
+    const presenceChannel = supabase.channel("online-presence", {
       config: { presence: { key: uid } },
     });
 
@@ -338,6 +340,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => {
       window.removeEventListener("online", onOnline);
       supabase.removeChannel(channel);
+      supabase.removeChannel(presenceChannel);
     };
   }, [uid, load, syncMessages]);
 
@@ -354,10 +357,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .map(([userId, ms]) => ({ id: userId, userId, messages: ms, unread: ms.filter((m) => m.toId === uid && !m.read).length }))
       .sort((a, b) => (b.messages.at(-1)?.createdAt ?? 0) - (a.messages.at(-1)?.createdAt ?? 0));
   }, [messages, uid]);
+
   const fail = (e: any) => {
-  const msg = e?.message || e?.error_description || (typeof e === "string" ? e : "Something went wrong");
-  toast.error(msg);
-};
+    const msg = e?.message || e?.error_description || (typeof e === "string" ? e : "Something went wrong");
+    toast.error(msg);
+  };
+
   const value = useMemo<Store>(() => {
     const myId = uid ?? "";
     return {
@@ -455,7 +460,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setStories((ss) => ss.filter((s) => s.id !== storyId));
         toast.success("Story deleted");
       },
-            sendMessage: async (userId, text, opts) => {
+      sendMessage: async (userId, text, opts) => {
         let media_url: string | null = null;
         let media_type: string | null = null;
         if (opts?.file) {
@@ -486,7 +491,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const urls = media_url ? await signPaths([media_url]) : undefined;
         setMessages((m) => m.some((x) => x.id === data.id) ? m : [...m, toMessage(data, urls)]);
       },
-            getUserPresence: (userId: string) => {
+      getUserPresence: (userId: string) => {
         const isOnline = onlineUserIds.has(userId);
         if (isOnline) return { isOnline: true, lastSeen: Date.now() };
 
@@ -545,7 +550,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setUsers((us) => us.map((u) => (u.id === userId ? { ...u, verified } : u)));
       },
     };
-  }, [uid, ready, authChecked, me, users, posts, stories, messages, conversations, notifications, liked, saved, following, blocked, theme, setTheme, load, isAdmin, perms]);
+  }, [uid, ready, authChecked, me, users, posts, stories, messages, conversations, notifications, liked, saved, following, blocked, theme, setTheme, load, isAdmin, perms, onlineUserIds, lastSeenMap]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
