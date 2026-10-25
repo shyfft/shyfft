@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { ChevronLeft, ChevronRight, LogOut, Moon, Shield, UserX, User as UserIcon, Sun } from "lucide-react";
+import { BadgeCheck, ChevronLeft, ChevronRight, LogOut, Moon, Shield, UserX, User as UserIcon, Sun } from "lucide-react";
 import { toast } from "sonner";
 import { TopBar } from "@/components/shyfft/AppShell";
 import { UserAvatar } from "@/components/shyfft/Avatar";
