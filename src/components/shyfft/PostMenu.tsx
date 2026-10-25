@@ -58,6 +58,11 @@ export function PostMenu({ open, onClose, userId, postId }: { open: boolean; onC
                 {s.following.has(userId) ? "Unfollow" : "Follow"}
               </button>
               <button className={`${row} text-destructive`} onClick={() => setReport(true)}>Report</button>
+              {postId && s.perms.deletePosts && (
+                <button className={`${row} text-destructive`} onClick={() => { if (confirm("Remove this post as moderator?")) s.deletePost(postId); close(); }}>
+                  Remove post (moderator)
+                </button>
+              )}
               <button className={`${row} text-destructive`} onClick={() => { s.toggleBlock(userId); toast(`Blocked @${user?.username}`); close(); }}>Block</button>
             </>
           )}
