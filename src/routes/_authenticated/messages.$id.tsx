@@ -8,6 +8,7 @@ import type { Message } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { VerifiedBadge } from "@/components/shyfft/VerifiedBadge";
 import { startCall } from "@/components/shyfft/CallManager";
+import { formatActiveStatus } from "@/lib/format";
 
 export const Route = createFileRoute("/_authenticated/messages/$id")({
   head: () => ({
@@ -34,6 +35,10 @@ function Chat() {
   const [progress, setProgress] = useState<number | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const end = useRef<HTMLDivElement>(null);
+
+  const presence = user ? s.getUserPresence?.(user.id) ?? { isOnline: false } : { isOnline: false };
+  const statusText = formatActiveStatus(presence.lastSeen, presence.isOnline);
+
   useEffect(() => end.current?.scrollIntoView({ behavior: "smooth" }), [conv.messages.length]);
   useEffect(() => { s.markConversationRead(id); }, [id, conv.unread]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
@@ -74,8 +79,27 @@ function Chat() {
       <header className="glass flex h-14 items-center gap-3 border-b px-3">
         <Link to="/messages" aria-label="Back"><ChevronLeft className="size-6" /></Link>
         <Link to="/u/$username" params={{ username: user.username }} className="flex items-center gap-2">
-          <UserAvatar user={user} size={34} />
-          <div className="leading-tight"><p className="flex items-center gap-1 text-sm font-semibold">{user.name}<VerifiedBadge show={user.verified} className="size-3.5" /></p><p className="text-xs text-muted-foreground">@{user.username}</p></div>
+          <div className="relative">
+            <UserAvatar user={user} size={34} />
+            {presence.isOnline && (
+              <span className="absolute bottom-0 right-0 size-2.5 rounded-full border-2 border-background bg-emerald-500" />
+            )}
+          </div>
+          <div className="leading-tight">
+            <p className="flex items-center gap-1 text-sm font-semibold">
+              {user.name}
+              <VerifiedBadge show={user.verified} className="size-3.5" />
+            </p>
+            <p className="flex items-center gap-1 text-xs text-muted-foreground">
+              {presence.isOnline ? (
+                <span className="font-medium text-emerald-500">Active now</span>
+              ) : statusText ? (
+                <span>{statusText}</span>
+              ) : (
+                <span>@{user.username}</span>
+              )}
+            </p>
+          </div>
         </Link>
         <button onClick={() => startCall({ id: user.id, name: user.name, username: user.username, avatar: user.avatar })} aria-label="Voice call" className="ml-auto rounded-full p-2 hover:bg-muted"><Phone className="size-5" /></button>
       </header>
