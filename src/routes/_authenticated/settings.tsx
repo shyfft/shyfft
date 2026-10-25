@@ -29,7 +29,12 @@ function Settings() {
       <TopBar title="Settings" left={<button aria-label="Back" onClick={() => router.history.back()}><ChevronLeft className="size-6" /></button>} />
       <Group title="Account">
         <Link to="/onboarding" className={row}><UserIcon className="size-5" /><span className="flex-1">Username & profile</span><ChevronRight className="size-4 text-muted-foreground" /></Link>
-              {s.isAdmin && (
+        <Link to="/creator" className={row}>
+          <BadgeCheck className="size-5 text-verified" />
+          <span className="flex-1">Creator Studio {s.me?.verified ? "" : "🔒"}</span>
+          <ChevronRight className="size-4 text-muted-foreground" />
+        </Link>
+        {(s.isAdmin || s.perms.verify || s.perms.deletePosts || s.perms.viewReports) && (
           <Link to="/admin" className={row}>
             <Shield className="size-5 text-primary" />
             <span className="flex-1 font-semibold text-primary">🛡️ Admin Dashboard</span>
