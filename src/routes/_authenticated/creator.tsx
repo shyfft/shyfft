@@ -38,7 +38,7 @@ function CreatorPage() {
       <>
         <TopBar title="Creator Studio" left={back} />
         <div className="mx-auto max-w-lg px-4 pb-24 pt-6 text-center">
-          <div className="mx-auto mb-3 flex size-16 items-center justify-center rounded-full bg-brand-gradient text-primary-foreground"><Lock className="size-7" /></div>
+          <div className="mx-auto mb-3 flex size-16 items-center justify-center rounded-full bg-brand text-primary-foreground"><Lock className="size-7" /></div>
           <h1 className="font-display text-xl font-bold">Unlock with the green tick</h1>
           <p className="mt-1 text-sm text-muted-foreground">Verified creators get a Creator Studio with stats, monetization and a glowing profile.</p>
           <div className="mt-6 space-y-4 text-left">
@@ -47,7 +47,7 @@ function CreatorPage() {
               return (
                 <div key={g.label}>
                   <div className="mb-1 flex justify-between text-xs font-semibold"><span>{g.label}</span><span>{g.have} / {g.need}</span></div>
-                  <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full bg-brand-gradient transition-all" style={{ width: `${pct}%` }} /></div>
+                  <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full bg-brand transition-all" style={{ width: `${pct}%` }} /></div>
                 </div>
               );
             })}
@@ -69,7 +69,7 @@ function CreatorPage() {
     <>
       <TopBar title="Creator Studio" left={back} />
       <div className="mx-auto max-w-lg px-4 pb-24 pt-4">
-        <div className="rounded-3xl bg-brand-gradient p-5 text-primary-foreground shadow-lg">
+        <div className="rounded-3xl bg-brand p-5 text-primary-foreground shadow-lg">
           <p className="flex items-center gap-1 text-sm font-semibold">@{me.username}<VerifiedBadge show /></p>
           <p className="mt-3 text-xs opacity-80">Earnings balance</p>
           <p className="font-display text-3xl font-bold">₹0.00</p>
