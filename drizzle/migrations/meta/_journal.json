@@ -43,6 +43,13 @@
       "when": 1792631932954,
       "tag": "0005_messages_media_receipts",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792891777824,
+      "tag": "0006_admin_permissions",
+      "breakpoints": true
     }
   ]
 }

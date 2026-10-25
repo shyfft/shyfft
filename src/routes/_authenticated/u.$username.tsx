@@ -76,7 +76,7 @@ function Profile() {
             </>
           )}
         </div>
-        {s.isAdmin && !isMe && (
+        {s.perms.verify && !isMe && (
           <button disabled={busy} onClick={async () => {
             setBusy(true);
             try { await s.setVerified(user.id, !user.verified); toast.success(user.verified ? "Verification removed" : "User verified"); }

@@ -14,6 +14,41 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_permissions: {
+        Row: {
+          can_delete_posts: boolean
+          can_verify: boolean
+          can_view_reports: boolean
+          granted_by: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          can_delete_posts?: boolean
+          can_verify?: boolean
+          can_view_reports?: boolean
+          granted_by?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          can_delete_posts?: boolean
+          can_verify?: boolean
+          can_view_reports?: boolean
+          granted_by?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "admin_permissions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       blocks: {
         Row: {
           blocked_id: string
@@ -492,12 +527,25 @@ export type Database = {
     }
     Functions: {
       can_view_user: { Args: { target: string }; Returns: boolean }
+      has_admin_perm: {
+        Args: { _perm: string; _user: string }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
         Returns: boolean
+      }
+      set_admin_permissions: {
+        Args: {
+          _delete: boolean
+          _reports: boolean
+          _target: string
+          _verify: boolean
+        }
+        Returns: undefined
       }
       set_user_verified: {
         Args: { _target: string; _verified: boolean }

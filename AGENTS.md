@@ -15,3 +15,4 @@
 - Media lives in a private `media` storage bucket under `<user_id>/...`; the DB stores paths and the store turns them into signed URLs, because the workspace blocks public buckets.
 - Like/comment/follower counts and notifications are maintained by DB triggers, and a trigger blocks users from editing counters/verified, so clients never write them.
 - Reusable UI lives in `src/components/shyfft/`.
+- Admin permissions/reports data access lives in `src/lib/admin.ts`; backend functions (`has_admin_perm`, `set_admin_permissions`) enforce who can do what.
