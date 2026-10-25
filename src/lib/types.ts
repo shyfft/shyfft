@@ -41,10 +41,12 @@ export type Message = {
   createdAt: number;
   read: boolean;
   deliveredAt?: number | undefined;
+  readAt?: number | undefined;
   media?: string | undefined;
   mediaType?: MediaType | undefined;
   postId?: string | undefined;
 };
+
 /** Conversation id is the other participant's user id. */
 export type Conversation = { id: string; userId: string; messages: Message[]; unread: number };
 
