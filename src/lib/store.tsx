@@ -52,7 +52,7 @@ type Store = {
   perms: { verify: boolean; deletePosts: boolean; viewReports: boolean };
   setVerified: (userId: string, verified: boolean) => Promise<void>;
 };
-
+  getUserPresence: (userId: string) => { isOnline: boolean; lastSeen?: number };
 const Ctx = createContext<Store | null>(null);
 const ts = (s: string) => new Date(s).getTime();
 const isPath = (v: string | null | undefined): v is string => !!v && !/^https?:/.test(v);
@@ -131,6 +131,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [following, setFollowing] = useState<Set<string>>(new Set());
   const [blocked, setBlocked] = useState<Set<string>>(new Set());
   const [theme, setThemeState] = useState<Theme>("light");
+    const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+  const [lastSeenMap, setLastSeenMap] = useState<Record<string, number>>(() => {
+    try { return JSON.parse(localStorage.getItem("shyfft_last_seen") || "{}"); } catch { return {}; }
+  });
   const uidRef = useRef<string | null>(null);
   uidRef.current = uid;
 
@@ -292,6 +296,44 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     const onOnline = () => syncMessages(uid);
     window.addEventListener("online", onOnline);
+        const presenceChannel = supabase.channel("online-presence", {
+      config: { presence: { key: uid } },
+    });
+
+    presenceChannel
+      .on("presence", { event: "sync" }, () => {
+        const state = presenceChannel.presenceState();
+        const online = new Set<string>();
+        const now = Date.now();
+        const updated: Record<string, number> = {};
+        for (const key of Object.keys(state)) {
+          online.add(key);
+          updated[key] = now;
+        }
+        setOnlineUserIds(online);
+        setLastSeenMap((prev) => {
+          const next = { ...prev, ...updated };
+          try { localStorage.setItem("shyfft_last_seen", JSON.stringify(next)); } catch {}
+          return next;
+        });
+      })
+      .on("presence", { event: "leave" }, ({ key }) => {
+        setOnlineUserIds((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+        setLastSeenMap((prev) => {
+          const next = { ...prev, [key]: Date.now() };
+          try { localStorage.setItem("shyfft_last_seen", JSON.stringify(next)); } catch {}
+          return next;
+        });
+      })
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await presenceChannel.track({ online_at: new Date().toISOString() });
+        }
+      });
 
     return () => {
       window.removeEventListener("online", onOnline);
@@ -443,6 +485,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (error) { fail(error); return; }
         const urls = media_url ? await signPaths([media_url]) : undefined;
         setMessages((m) => m.some((x) => x.id === data.id) ? m : [...m, toMessage(data, urls)]);
+      },
+            getUserPresence: (userId: string) => {
+        const isOnline = onlineUserIds.has(userId);
+        if (isOnline) return { isOnline: true, lastSeen: Date.now() };
+
+        let lastSeen = lastSeenMap[userId];
+        if (!lastSeen) {
+          const userMsgs = messages.filter((m) => m.fromId === userId);
+          if (userMsgs.length > 0) lastSeen = userMsgs[userMsgs.length - 1].createdAt;
+        }
+        if (!lastSeen) {
+          const userPosts = posts.filter((p) => p.userId === userId);
+          if (userPosts.length > 0) lastSeen = userPosts[0].createdAt;
+        }
+        return { isOnline: false, lastSeen };
       },
       openConversation: (userId) => userId,
       markConversationRead: (userId) => {
