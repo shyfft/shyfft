@@ -48,6 +48,8 @@ type Store = {
   refresh: () => Promise<void>;
   /** UI hint only; the database enforces admin rights in set_user_verified. */
   isAdmin: boolean;
+  /** UI hint only; database functions/RLS enforce these. */
+  perms: { verify: boolean; deletePosts: boolean; viewReports: boolean };
   setVerified: (userId: string, verified: boolean) => Promise<void>;
 };
 
@@ -118,6 +120,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [authChecked, setAuthChecked] = useState(false);
   const [ready, setReady] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [perms, setPerms] = useState({ verify: false, deletePosts: false, viewReports: false });
   const [users, setUsers] = useState<User[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
   const [stories, setStories] = useState<Story[]>([]);
@@ -226,6 +229,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     const adminRes = await supabase.rpc("has_role", { _user_id: me, _role: "admin" });
     setIsAdmin(adminRes.data === true);
+    const permRes = await supabase.from("admin_permissions").select("*").eq("user_id", me).maybeSingle();
+    const sup = adminRes.data === true;
+    setPerms({ verify: sup || !!permRes.data?.can_verify, deletePosts: sup || !!permRes.data?.can_delete_posts, viewReports: sup || !!permRes.data?.can_view_reports });
     setReady(true);
   }, []);
 
@@ -390,7 +396,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setStories((ss) => [{ id: data.id, userId: myId, media: URL.createObjectURL(file), createdAt: ts(data.created_at) }, ...ss]);
       },
       deletePost: async (postId) => {
-        const { error } = await supabase.from("posts").delete().eq("id", postId).eq("user_id", myId);
+        const { error } = await supabase.from("posts").delete().eq("id", postId);
         if (error) { toast.error("Could not delete post"); throw error; }
         setPosts((ps) => ps.filter((p) => p.id !== postId));
         toast.success("Post deleted");
@@ -475,13 +481,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       signOut: async () => { await supabase.auth.signOut(); },
       refresh: async () => { if (uidRef.current) await load(uidRef.current); },
       isAdmin,
+      perms,
       setVerified: async (userId, verified) => {
         const { error } = await supabase.rpc("set_user_verified", { _target: userId, _verified: verified });
         if (error) throw error;
         setUsers((us) => us.map((u) => (u.id === userId ? { ...u, verified } : u)));
       },
     };
-  }, [uid, ready, authChecked, me, users, posts, stories, messages, conversations, notifications, liked, saved, following, blocked, theme, setTheme, load, isAdmin]);
+  }, [uid, ready, authChecked, me, users, posts, stories, messages, conversations, notifications, liked, saved, following, blocked, theme, setTheme, load, isAdmin, perms]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
