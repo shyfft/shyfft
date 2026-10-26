@@ -1,5 +1,6 @@
 import { useRouterState } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+import { LogoMark } from "./Logo";
 
 /** Gradient bar at the top while a page is loading. */
 export function NavProgress() {
@@ -12,12 +13,25 @@ export function NavProgress() {
   );
 }
 
-/** Fades each new page in when the path changes. */
+/** Animate the existing outlet without remounting shared layouts or calls. */
 export function PageFade({ children }: { children: ReactNode }) {
-  const path = useRouterState({ select: (s) => s.location.pathname });
+  const path = useRouterState({ select: (s) => s.resolvedLocation?.pathname });
+  const loading = useRouterState({ select: (s) => s.isLoading || s.status === "pending" });
+  const content = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const animation = content.current?.animate?.(
+      [{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "translateY(0)" }],
+      { duration: 220, easing: "ease-out" },
+    );
+    return () => animation?.cancel();
+  }, [path]);
   return (
-    <div key={path} className="animate-in fade-in duration-200 motion-reduce:animate-none">
-      {children}
+    <div className="relative min-h-dvh" aria-busy={loading}>
+      <div ref={content} inert={loading} className={loading ? "opacity-0" : "opacity-100"}>{children}</div>
+      {loading && <div role="status" aria-label="Loading page" className="absolute inset-0 flex min-h-dvh items-center justify-center bg-background">
+        <div className="animate-pulse motion-reduce:animate-none"><LogoMark size={48} /></div>
+      </div>}
     </div>
   );
 }
