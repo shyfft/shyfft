@@ -133,14 +133,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [blocked, setBlocked] = useState<Set<string>>(new Set());
   const [theme, setThemeState] = useState<Theme>("light");
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
-  const [lastSeenMap, setLastSeenMap] = useState<Record<string, number>>(() => {
-    try { return JSON.parse(localStorage.getItem("shyfft_last_seen") || "{}"); } catch { return {}; }
-  });
+  const [lastSeenMap, setLastSeenMap] = useState<Record<string, number>>({});
+  const reading = useRef(new Set<string>());
   const uidRef = useRef<string | null>(null);
   uidRef.current = uid;
 
   // Theme
   useEffect(() => {
+    try { setLastSeenMap(JSON.parse(localStorage.getItem("shyfft_last_seen") || "{}")); } catch { /* optional cache */ }
     const t = localStorage.getItem("shyfft-theme") as Theme | null;
     if (t) setThemeState(t);
     else if (window.matchMedia("(prefers-color-scheme: dark)").matches) setThemeState("dark");
@@ -267,24 +267,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     load(uid);
 
     const channel = supabase
-      .channel(`user-${uid}`)
+      .channel(`user-${uid}-${crypto.randomUUID()}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `recipient_id=eq.${uid}` },
         async (p) => {
           try {
             const row = p.new as Tables["messages"]["Row"];
             let urls: Map<string, string> | undefined;
             try {
-              urls = isPath(row.media_url) ? await signPaths([row.media_url!]) : undefined;
+              urls = isPath(row.media_url) ? await signPaths([row.media_url]) : undefined;
             } catch { /* media URL can be re-signed later; still show the message */ }
             setMessages((m) => m.some((x) => x.id === row.id) ? m : [...m, toMessage(row, urls)]);
-            supabase.from("messages").update({ delivered_at: new Date().toISOString() }).eq("id", row.id).is("delivered_at", null).then();
+            void Promise.resolve(supabase.from("messages").update({ delivered_at: new Date().toISOString() }).eq("id", row.id).is("delivered_at", null)).catch(() => {});
           } catch { /* a realtime event must never crash the app */ }
         })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages", filter: `sender_id=eq.${uid}` },
         (p) => {
           const row = p.new as Tables["messages"]["Row"];
           setMessages((ms) => ms.map((m) => m.id === row.id
-            ? { ...m, read: !!row.read_at, deliveredAt: row.delivered_at ? ts(row.delivered_at) : m.deliveredAt }
+            ? { ...m, read: !!row.read_at, readAt: row.read_at ? ts(row.read_at) : undefined, deliveredAt: row.delivered_at ? ts(row.delivered_at) : m.deliveredAt }
             : m));
         })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${uid}` },
@@ -461,14 +461,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         toast.success("Story deleted");
       },
       sendMessage: async (userId, text, opts) => {
+        if (!myId) throw new Error("Please sign in again before sending.");
+        if (!text.trim() && !opts?.file && !opts?.postId) return;
         let media_url: string | null = null;
         let media_type: string | null = null;
         if (opts?.file) {
-          if (opts.file.size > MAX_FILE_SIZE) { fail(new Error("File too large — max 250 MB")); return; }
-          if (!/^image\/|^video\//.test(opts.file.type)) { fail(new Error("Only photos and videos can be sent")); return; }
-          try {
-            media_url = await uploadMedia(myId, opts.file, opts.onProgress);
-          } catch (e) { fail(e); return; }
+          if (opts.file.size > MAX_FILE_SIZE) throw new Error("File too large — max 250 MB");
+          if (!/^image\/|^video\//.test(opts.file.type)) throw new Error("Only photos and videos can be sent");
+          media_url = await uploadMedia(myId, opts.file, opts.onProgress);
           media_type = opts.file.type.startsWith("video") ? "video" : "image";
         }
 
@@ -487,8 +487,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           post_id: opts?.postId ?? null,
         }).select().single();
 
-        if (error) { fail(error); return; }
-        const urls = media_url ? await signPaths([media_url]) : undefined;
+        if (error) throw new Error(error.message);
+        if (!data) throw new Error("Message wasn't sent. Please try again.");
+        let urls: Map<string, string> | undefined;
+        try { urls = media_url ? await signPaths([media_url]) : undefined; } catch { /* insert succeeded; never encourage a duplicate send */ }
         setMessages((m) => m.some((x) => x.id === data.id) ? m : [...m, toMessage(data, urls)]);
       },
       getUserPresence: (userId: string) => {
@@ -498,19 +500,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         let lastSeen = lastSeenMap[userId];
         if (!lastSeen) {
           const userMsgs = messages.filter((m) => m.fromId === userId);
-          if (userMsgs.length > 0) lastSeen = userMsgs[userMsgs.length - 1].createdAt;
+          lastSeen = userMsgs.at(-1)?.createdAt;
         }
         if (!lastSeen) {
           const userPosts = posts.filter((p) => p.userId === userId);
-          if (userPosts.length > 0) lastSeen = userPosts[0].createdAt;
+          lastSeen = userPosts[0]?.createdAt;
         }
-        return { isOnline: false, lastSeen };
+        return { isOnline: false, ...(lastSeen !== undefined ? { lastSeen } : {}) };
       },
       openConversation: (userId) => userId,
       markConversationRead: (userId) => {
-        if (!messages.some((m) => m.fromId === userId && m.toId === myId && !m.read)) return;
-        setMessages((ms) => ms.map((m) => (m.fromId === userId && m.toId === myId ? { ...m, read: true } : m)));
-        supabase.from("messages").update({ read_at: new Date().toISOString() }).match({ sender_id: userId, recipient_id: myId }).is("read_at", null).then();
+        const ids = messages.filter((m) => m.fromId === userId && m.toId === myId && !m.read).map((m) => m.id);
+        if (!ids.length || reading.current.has(userId)) return;
+        reading.current.add(userId);
+        const readAt = Date.now();
+        void Promise.resolve(supabase.from("messages").update({ read_at: new Date(readAt).toISOString() }).in("id", ids).eq("recipient_id", myId).is("read_at", null))
+          .then(({ error }) => {
+            if (!error) setMessages((ms) => ms.map((m) => ids.includes(m.id) ? { ...m, read: true, readAt } : m));
+          }).catch(() => { /* reconnect resync retries; keep unconfirmed messages unread */ })
+          .finally(() => reading.current.delete(userId));
       },
       markNotificationsRead: () => {
         setNotifications((ns) => ns.map((n) => ({ ...n, read: true })));
@@ -564,6 +572,7 @@ function toMessage(m: Tables["messages"]["Row"], urls?: Map<string, string>): Me
     text: m.text,
     createdAt: ts(m.created_at),
     read: !!m.read_at,
+    readAt: m.read_at ? ts(m.read_at) : undefined,
     deliveredAt: m.delivered_at ? ts(m.delivered_at) : undefined,
     media: m.media_url ? (mediaPath ? urls?.get(mediaPath) : m.media_url) : undefined,
     mediaType: (m.media_type as MediaType | null) ?? undefined,

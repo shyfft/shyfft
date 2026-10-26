@@ -23,7 +23,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="mx-auto min-h-screen max-w-lg bg-background sm:border-x">
       <main className={cn(!hide && "pb-24")}>
-        <div key={pathname} className="animate-page-enter">{children}</div>
+        {children}
       </main>
       {!hide && (
         <nav className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-lg px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">

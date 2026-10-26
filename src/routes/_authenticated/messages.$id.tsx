@@ -10,6 +10,8 @@ import { VerifiedBadge } from "@/components/shyfft/VerifiedBadge";
 import { startCall } from "@/components/shyfft/CallManager";
 import { formatActiveStatus } from "@/lib/format";
 import { supabase } from "@/integrations/supabase/client";
+import type { RealtimeChannel } from "@supabase/supabase-js";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/_authenticated/messages/$id")({
   head: () => ({
@@ -18,6 +20,8 @@ export const Route = createFileRoute("/_authenticated/messages/$id")({
       { name: "description", content: "A direct message conversation on shyfft." },
       { property: "og:title", content: "Chat — shyfft" },
       { property: "og:description", content: "A direct message conversation on shyfft." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Chat,
@@ -44,7 +48,7 @@ function formatDateHeader(t: number) {
   return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-function Chat() {
+export function Chat() {
   const { id } = Route.useParams();
   const s = useStore();
   const ME_ID = s.me?.id ?? "";
@@ -56,9 +60,13 @@ function Chat() {
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   const fileInput = useRef<HTMLInputElement>(null);
   const end = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const atBottom = useRef(true);
+  const typingChannel = useRef<RealtimeChannel | null>(null);
   const lastBroadcastRef = useRef<number>(0);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -71,10 +79,11 @@ function Chat() {
   useEffect(() => {
     if (!ME_ID || !id) return;
     const channel = supabase.channel(`typing:${roomId}`);
+    typingChannel.current = channel;
 
     channel
       .on("broadcast", { event: "typing" }, (payload) => {
-        if (payload.payload?.userId === id) {
+        if (payload["payload"]?.userId === id) {
           setIsOtherTyping(true);
           if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
           typingTimeoutRef.current = setTimeout(() => {
@@ -83,7 +92,7 @@ function Chat() {
         }
       })
       .on("broadcast", { event: "stop-typing" }, (payload) => {
-        if (payload.payload?.userId === id) {
+        if (payload["payload"]?.userId === id) {
           setIsOtherTyping(false);
         }
       })
@@ -91,27 +100,36 @@ function Chat() {
 
     return () => {
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      supabase.removeChannel(channel);
+      typingChannel.current = null;
+      void supabase.removeChannel(channel).catch(() => {});
     };
   }, [ME_ID, id, roomId]);
 
-  useEffect(() => end.current?.scrollIntoView({ behavior: "smooth" }), [conv.messages.length, isOtherTyping]);
-  useEffect(() => { s.markConversationRead(id); }, [id, conv.unread]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (atBottom.current) end.current?.scrollIntoView?.({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "end" });
+  }, [conv.messages.length, isOtherTyping]);
+  useEffect(() => {
+    const mark = () => { if (document.visibilityState === "visible") s.markConversationRead(id); };
+    mark();
+    document.addEventListener("visibilitychange", mark);
+    return () => document.removeEventListener("visibilitychange", mark);
+  }, [id, conv.unread]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
   if (!user) return <p className="p-10 text-center text-muted-foreground">Conversation not found</p>;
 
   const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setText(e.target.value);
+    setSendError(null);
     if (!ME_ID || !id) return;
     const now = Date.now();
     if (now - lastBroadcastRef.current > 1200) {
       lastBroadcastRef.current = now;
-      supabase.channel(`typing:${roomId}`).send({
+      void typingChannel.current?.send({
         type: "broadcast",
         event: "typing",
         payload: { userId: ME_ID },
-      });
+      }).catch(() => {});
     }
   };
 
@@ -135,19 +153,23 @@ function Chat() {
     e.preventDefault();
     if (sending || (!text.trim() && !file)) return;
     setSending(true);
+    setSendError(null);
     setProgress(file ? 0 : null);
 
     // Stop typing notification on send
-    supabase.channel(`typing:${roomId}`).send({
+    void typingChannel.current?.send({
       type: "broadcast",
       event: "stop-typing",
       payload: { userId: ME_ID },
-    });
+    }).catch(() => {});
 
     try {
       await s.sendMessage(id, text.trim(), file ? { file, onProgress: setProgress } : undefined);
+      atBottom.current = true;
       setText("");
       cancelFile();
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : "Message wasn't sent. Please try again.");
     } finally {
       setSending(false);
       setProgress(null);
@@ -183,10 +205,13 @@ function Chat() {
             </p>
           </div>
         </Link>
-        <button onClick={() => startCall({ id: user.id, name: user.name, username: user.username, avatar: user.avatar })} aria-label="Voice call" className="ml-auto rounded-full p-2 hover:bg-muted"><Phone className="size-5" /></button>
+        <Button variant="ghost" size="icon" onClick={() => startCall({ id: user.id, name: user.name, username: user.username, avatar: user.avatar })} aria-label="Voice call" className="ml-auto rounded-full"><Phone className="size-5" /></Button>
       </header>
 
-      <div className="flex-1 space-y-2 overflow-y-auto p-4">
+      <div ref={scroller} onScroll={() => {
+        const el = scroller.current;
+        if (el) atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      }} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
         {conv.messages.map((m, idx) => {
           const prev = conv.messages[idx - 1];
           const showDate = !prev || !isSameDay(prev.createdAt, m.createdAt);
@@ -223,10 +248,10 @@ function Chat() {
             {file.type.startsWith("video")
               ? <video src={preview} className="h-20 w-20 rounded-xl object-cover" muted playsInline />
               : <img src={preview} alt="Attachment preview" className="h-20 w-20 rounded-xl object-cover" />}
-            <button aria-label="Remove attachment" onClick={cancelFile}
+            <Button type="button" size="icon" aria-label="Remove attachment" onClick={cancelFile}
               className="absolute -right-2 -top-2 flex size-6 items-center justify-center rounded-full bg-foreground text-background">
               <X className="size-3.5" />
-            </button>
+            </Button>
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-xs text-muted-foreground">
@@ -241,16 +266,17 @@ function Chat() {
         </div>
       )}
 
+      {sendError && <p role="alert" className="px-4 py-2 text-xs text-destructive">{sendError}</p>}
       <form onSubmit={send} className="flex items-center gap-2 border-t p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <input ref={fileInput} type="file" accept="image/*,video/*" className="hidden" onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
-        <button type="button" aria-label="Attach photo or video" onClick={() => fileInput.current?.click()}
+        <Button type="button" variant="secondary" size="icon" aria-label="Attach photo or video" disabled={sending} onClick={() => fileInput.current?.click()}
           className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-foreground active:scale-90">
           <ImagePlus className="size-5" />
-        </button>
-        <input value={text} onChange={handleTextChange} placeholder="Message…" className="flex-1 rounded-full bg-muted px-4 py-2.5 text-sm outline-none" />
-        <button aria-label="Send" disabled={sending || (!text.trim() && !file)} className="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand text-primary-foreground disabled:opacity-40">
+        </Button>
+        <input value={text} disabled={sending} onChange={handleTextChange} placeholder="Message…" className="min-w-0 flex-1 rounded-full bg-muted px-4 py-2.5 text-sm outline-none" />
+        <Button type="submit" size="icon" aria-label="Send" disabled={sending || (!text.trim() && !file)} className="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand text-primary-foreground disabled:opacity-40">
           {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-        </button>
+        </Button>
       </form>
     </div>
   );

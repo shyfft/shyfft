@@ -1,5 +1,10 @@
 # SHYFFT Premium Upgrade Roadmap
 
+## Current request
+- [ ] Diagnose and fix message send/receive page crashes without rapid refreshes.
+- [ ] Add smooth navigation transitions without remounting the signed-in workspace.
+- [ ] Verify chat regressions and signed-in navigation.
+
 - [ ] 1. Fix Reels audio (muted autoplay, tap-to-unmute, sound toggle)
 - [ ] 2. Reels audio pause/resume control, no duplicate playback across reels/screens
 - [ ] 3. Premium inline video player in home feed (custom controls, auto-hide ~2s, tap interactions, buffering/error states)
