@@ -116,6 +116,29 @@ async function uploadMedia(uid: string, file: File, onProgress?: (pct: number) =
   return path;
 }
 
+// System/App notification sender
+function notifyUser(title: string, options?: NotificationOptions) {
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+  try {
+    if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.ready.then((reg) => {
+        reg.showNotification(title, {
+          icon: "/favicon.ico",
+          badge: "/favicon.ico",
+          ...options,
+        }).catch(() => {
+          try { new Notification(title, options); } catch {}
+        });
+      }).catch(() => {
+        try { new Notification(title, options); } catch {}
+      });
+    } else {
+      new Notification(title, options);
+    }
+  } catch { /* suppress */ }
+}
+
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [uid, setUid] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -137,6 +160,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const reading = useRef(new Set<string>());
   const uidRef = useRef<string | null>(null);
   uidRef.current = uid;
+  const usersRef = useRef<User[]>([]);
+  usersRef.current = users;
 
   // Theme
   useEffect(() => {
@@ -266,6 +291,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!uid) { setReady(false); return; }
     load(uid);
 
+    // Auto-request notification permission on login if default
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+
     const channel = supabase
       .channel(`user-${uid}-${crypto.randomUUID()}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `recipient_id=eq.${uid}` },
@@ -278,6 +308,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             } catch { /* media URL can be re-signed later; still show the message */ }
             setMessages((m) => m.some((x) => x.id === row.id) ? m : [...m, toMessage(row, urls)]);
             void Promise.resolve(supabase.from("messages").update({ delivered_at: new Date().toISOString() }).eq("id", row.id).is("delivered_at", null)).catch(() => {});
+
+            // Trigger notification if app is in background or user is not viewing this specific chat
+            const inChat = typeof window !== "undefined" && window.location.pathname.includes(`/messages/${row.sender_id}`);
+            if (typeof document !== "undefined" && (document.visibilityState !== "visible" || !inChat)) {
+              const sender = usersRef.current.find((u) => u.id === row.sender_id);
+              const senderName = sender?.name || sender?.username || "Someone";
+              const text = row.text || (row.media_url ? "Sent an attachment" : "Sent a message");
+              notifyUser(`Message from ${senderName}`, {
+                body: text,
+                icon: sender?.avatar || "/favicon.ico",
+                tag: `msg-${row.id}`,
+              });
+            }
           } catch { /* a realtime event must never crash the app */ }
         })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages", filter: `sender_id=eq.${uid}` },
@@ -288,7 +331,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             : m));
         })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${uid}` },
-        (p) => setNotifications((n) => [toNotification(p.new as Tables["notifications"]["Row"]), ...n]))
+        (p) => {
+          const row = p.new as Tables["notifications"]["Row"];
+          setNotifications((n) => [toNotification(row), ...n]);
+
+          // Trigger notification if app is in background
+          if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+            const actor = usersRef.current.find((u) => u.id === row.actor_id);
+            const name = actor?.name || actor?.username || "Someone";
+            let text = "New notification on shyfft";
+            if (row.type === "like") text = `${name} liked your post`;
+            else if (row.type === "comment") text = `${name} commented on your post`;
+            else if (row.type === "follow") text = `${name} started following you`;
+            notifyUser("shyfft", {
+              body: text,
+              icon: actor?.avatar || "/favicon.ico",
+              tag: `notif-${row.id}`,
+            });
+          }
+        })
       .subscribe((status) => {
         // After every (re)join — including automatic reconnects — quietly catch
         // up on anything missed while the socket was down. No reload, no toast.
