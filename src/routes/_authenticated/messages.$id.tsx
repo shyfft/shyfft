@@ -83,7 +83,7 @@ export function Chat() {
 
     channel
       .on("broadcast", { event: "typing" }, (payload) => {
-        if (payload.payload?.userId === id) {
+        if (payload["payload"]?.userId === id) {
           setIsOtherTyping(true);
           if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
           typingTimeoutRef.current = setTimeout(() => {
@@ -92,7 +92,7 @@ export function Chat() {
         }
       })
       .on("broadcast", { event: "stop-typing" }, (payload) => {
-        if (payload.payload?.userId === id) {
+        if (payload["payload"]?.userId === id) {
           setIsOtherTyping(false);
         }
       })

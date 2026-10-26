@@ -15,7 +15,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 import { Chat } from "@/routes/_authenticated/messages.$id";
 
-const user: User = { id: "other", username: "other", name: "Other", avatar: "", avatarPath: null, bio: "", onboarded: true, followers: 0, following: 0 };
+const user: User = { id: "other", username: "other", name: "Other", avatar: "/favicon.ico", avatarPath: null, bio: "", onboarded: true, followers: 0, following: 0 };
 const message: Message = { id: "message-1", fromId: "other", toId: "me", text: "Received message", createdAt: 1792980000000, read: false };
 
 describe("Chat updates", () => {
@@ -31,10 +31,10 @@ describe("Chat updates", () => {
     mocks.send.mockRejectedValueOnce(new Error("Network unavailable"));
     render(<Chat />);
     fireEvent.change(screen.getByPlaceholderText("Message…"), { target: { value: "Keep this draft" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: /^Send$/ }));
     await screen.findByRole("alert");
     expect(screen.getByPlaceholderText("Message…")).toHaveValue("Keep this draft");
-    fireEvent.click(screen.getByRole("button", { name: "Send", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: /^Send$/ }));
     await waitFor(() => expect(screen.getByPlaceholderText("Message…")).toHaveValue(""));
     expect(mocks.send).toHaveBeenCalledTimes(2);
   });
@@ -58,7 +58,7 @@ describe("Chat updates", () => {
     mocks.broadcast.mockRejectedValue(new Error("Socket disconnected"));
     render(<Chat />);
     fireEvent.change(screen.getByPlaceholderText("Message…"), { target: { value: "Hello" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: /^Send$/ }));
     await waitFor(() => expect(screen.getByPlaceholderText("Message…")).toHaveValue(""));
     expect(mocks.subscribe).toHaveBeenCalledTimes(1);
   });

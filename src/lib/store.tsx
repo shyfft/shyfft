@@ -500,13 +500,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         let lastSeen = lastSeenMap[userId];
         if (!lastSeen) {
           const userMsgs = messages.filter((m) => m.fromId === userId);
-          if (userMsgs.length > 0) lastSeen = userMsgs[userMsgs.length - 1].createdAt;
+          lastSeen = userMsgs.at(-1)?.createdAt;
         }
         if (!lastSeen) {
           const userPosts = posts.filter((p) => p.userId === userId);
-          if (userPosts.length > 0) lastSeen = userPosts[0].createdAt;
+          lastSeen = userPosts[0]?.createdAt;
         }
-        return { isOnline: false, lastSeen };
+        return { isOnline: false, ...(lastSeen !== undefined ? { lastSeen } : {}) };
       },
       openConversation: (userId) => userId,
       markConversationRead: (userId) => {
